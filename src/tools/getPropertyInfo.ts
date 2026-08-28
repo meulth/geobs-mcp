@@ -4,7 +4,7 @@ import {
 } from "../clients/ogcFeatures";
 import type { PropertyInfoClient } from "../clients/propertyInfo";
 import { GeoBsError } from "../errors";
-import { jsonByteLength } from "./output";
+import { mcpResultByteLength } from "./output";
 import { getPropertyInfoInput } from "./schemas";
 import { LIMITS } from "../config";
 
@@ -90,13 +90,13 @@ export async function getPropertyInfo(
     date: response.Date,
     realEstates: response.RealEstates
   };
-  if (jsonByteLength(output) > LIMITS.maxToolOutputBytes) {
+  if (mcpResultByteLength(output) > LIMITS.maxToolOutputBytes) {
     output = {
       ...(stripGeometry(output) as Record<string, unknown>),
       geometryOmitted: true
     };
   }
-  if (jsonByteLength(output) > LIMITS.maxToolOutputBytes) {
+  if (mcpResultByteLength(output) > LIMITS.maxToolOutputBytes) {
     throw new GeoBsError(
       "RESPONSE_TOO_LARGE",
       "The property response is too large even without geometry."

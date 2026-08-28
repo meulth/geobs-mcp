@@ -18,21 +18,33 @@ export function jsonByteLength(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
+// Every MCP tool result also serializes its structured value into a
+// TextContent block (see successResult in mcp/server.ts) so clients that
+// only read `content`, not `structuredContent`, still see the full result.
+// That duplication roughly doubles the wire size of a result, so output
+// budgets must be checked against this estimate, not the bare value.
+export function mcpResultByteLength(value: unknown): number {
+  return jsonByteLength({
+    content: [{ type: "text", text: JSON.stringify(value) }],
+    structuredContent: value
+  });
+}
+
 export function enforceFeatureOutputLimit<T extends { features: Array<Record<string, unknown>> }>(
   value: T
 ): T & { geometryOmitted?: boolean; outputTruncated?: boolean } {
-  if (jsonByteLength(value) <= LIMITS.maxToolOutputBytes) return value;
+  if (mcpResultByteLength(value) <= LIMITS.maxToolOutputBytes) return value;
 
   const withoutGeometry = {
     ...value,
     geometryOmitted: true,
     features: value.features.map(({ geometry: _geometry, ...feature }) => feature)
   };
-  if (jsonByteLength(withoutGeometry) <= LIMITS.maxToolOutputBytes) return withoutGeometry;
+  if (mcpResultByteLength(withoutGeometry) <= LIMITS.maxToolOutputBytes) return withoutGeometry;
 
   while (
     withoutGeometry.features.length > 1 &&
-    jsonByteLength(withoutGeometry) > LIMITS.maxToolOutputBytes
+    mcpResultByteLength(withoutGeometry) > LIMITS.maxToolOutputBytes
   ) {
     withoutGeometry.features.pop();
   }

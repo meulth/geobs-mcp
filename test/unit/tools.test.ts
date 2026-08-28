@@ -3,7 +3,7 @@ import type { StacClient } from "../../src/clients/stac";
 import type { OgcFeaturesClient } from "../../src/clients/ogcFeatures";
 import { searchDatasets } from "../../src/tools/searchDatasets";
 import { queryFeatures } from "../../src/tools/queryFeatures";
-import { enforceFeatureOutputLimit } from "../../src/tools/output";
+import { enforceFeatureOutputLimit, mcpResultByteLength } from "../../src/tools/output";
 
 describe("tool validation and mapping", () => {
   it("ranks real STAC-shaped metadata without a hardcoded dataset list", async () => {
@@ -44,6 +44,27 @@ describe("tool validation and mapping", () => {
         }
       ]
     });
+    expect(output.geometryOmitted).toBe(true);
+    expect(output.features[0]).not.toHaveProperty("geometry");
+  });
+
+  it("enforces the output budget against the actual wire size, not just the structured value", () => {
+    // A tool result is also serialized into a TextContent block (see
+    // successResult), so the transmitted bytes are roughly double the bare
+    // structured value. This payload stays under the limit by itself but
+    // must still trigger truncation once that duplication is counted.
+    const value = {
+      features: [
+        {
+          id: "1",
+          geometry: { type: "LineString", coordinates: ["x".repeat(200_000)] }
+        }
+      ]
+    };
+    expect(JSON.stringify(value).length).toBeLessThan(250_000);
+    expect(mcpResultByteLength(value)).toBeGreaterThan(250_000);
+
+    const output = enforceFeatureOutputLimit(value);
     expect(output.geometryOmitted).toBe(true);
     expect(output.features[0]).not.toHaveProperty("geometry");
   });

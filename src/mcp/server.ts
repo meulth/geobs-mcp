@@ -23,7 +23,7 @@ import {
   searchLocationOutputShape
 } from "../tools/schemas";
 
-function successResult(summary: string, output: Record<string, unknown>) {
+export function successResult(summary: string, output: Record<string, unknown>) {
   // MCP structuredContent is JSON, so remove JavaScript-only undefined values
   // before output-schema validation and transport serialization.
   const structuredContent = JSON.parse(JSON.stringify(output)) as Record<
@@ -31,7 +31,14 @@ function successResult(summary: string, output: Record<string, unknown>) {
     unknown
   >;
   return {
-    content: [{ type: "text" as const, text: summary }],
+    content: [
+      { type: "text" as const, text: summary },
+      // Per MCP's TextContent backwards-compatibility guidance (SEP-2106 §4.3),
+      // a tool with an outputSchema also serializes its full structured result
+      // as text: clients that render only `content` (not `structuredContent`)
+      // still receive every value and identifier needed for a follow-up call.
+      { type: "text" as const, text: JSON.stringify(structuredContent) }
+    ],
     structuredContent
   };
 }
