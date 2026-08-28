@@ -1,0 +1,34 @@
+export const GEOBS_ORIGIN = "https://api.geo.bs.ch";
+
+export const API_URLS = {
+  stac: `${GEOBS_ORIGIN}/stac/v1/`,
+  search: `${GEOBS_ORIGIN}/search/v2`,
+  ogcFeatures: `${GEOBS_ORIGIN}/ogc/v1/wfs3`,
+  propertyInfo: `${GEOBS_ORIGIN}/grundstueckinfo/v1`
+} as const;
+
+export const LIMITS = {
+  timeoutMs: 15_000,
+  metadataTimeoutMs: 25_000,
+  maxJsonBytes: 2_000_000,
+  maxWfsCollectionsBytes: 12_000_000,
+  maxToolOutputBytes: 250_000,
+  maxSearchResults: 20,
+  maxDatasetResults: 20,
+  maxFeatures: 25,
+  maxPropertyIds: 10,
+  maxPropertyFilters: 5
+} as const;
+
+export const CRS = {
+  2056: "http://www.opengis.net/def/crs/EPSG/0/2056",
+  4326: "http://www.opengis.net/def/crs/EPSG/0/4326",
+  3857: "http://www.opengis.net/def/crs/EPSG/0/3857",
+  4258: "http://www.opengis.net/def/crs/EPSG/0/4258"
+} as const;
+
+export type SupportedEpsg = keyof typeof CRS;
+
+export interface Env {
+  GEOBS_API_KEY?: string;
+}

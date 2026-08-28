@@ -1,0 +1,19 @@
+node_modules/
+.wrangler/
+dist/
+coverage/
+*.log
+
+# Local secrets. Never commit GEOBS_API_KEY.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
