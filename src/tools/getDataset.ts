@@ -1,11 +1,28 @@
+import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/server";
+import { registerReadOnlyTool } from "../mcp/register";
+import { datasetIdSchema } from "../schemas";
 import type { StacClient, StacAsset, StacItem } from "../clients/stac";
-import {
-  findCollectionsForDataset,
-  type OgcFeaturesClient
-} from "../clients/ogcFeatures";
+import type { OgcFeaturesClient } from "../clients/ogcFeatures";
+import { findCollectionsForDataset } from "../discovery";
 import { asGeoBsError } from "../errors";
 import { compactText, selectLinks } from "./output";
-import { getDatasetInput } from "./schemas";
+
+const getDatasetShape = {
+  id: datasetIdSchema.describe("Exact STAC collection ID returned by search_datasets.")
+};
+
+const getDatasetInput = z.object(getDatasetShape);
+
+const getDatasetOutputShape = {
+  id: z.string(),
+  title: z.string().optional(),
+  items: z.array(z.object({ id: z.string() }).catchall(z.json())),
+  ogcFeaturesDiscovery: z.object({
+    totalMatches: z.number().int(),
+    collections: z.array(z.object({ id: z.string() }).catchall(z.json()))
+  }).catchall(z.json())
+};
 
 function mapAssets(assets: Record<string, StacAsset> | undefined) {
   return Object.entries(assets ?? {}).map(([key, asset]) => ({
@@ -95,4 +112,21 @@ export async function getDataset(
     },
     warnings
   };
+}
+
+function summarize(output: Awaited<ReturnType<typeof getDataset>>): string {
+  return `Loaded dataset ${output.id}; discovered ${output.ogcFeaturesDiscovery.totalMatches} related OGC collection(s).`;
+}
+
+export function registerGetDataset(server: McpServer, stac: StacClient, ogc: OgcFeaturesClient) {
+  registerReadOnlyTool(server, {
+    name: "get_dataset",
+    title: "Get a GeoBS dataset",
+    description:
+      "Get one STAC dataset, its metadata, download assets, items and dynamically related OGC API Features collection IDs. Use an exact ID returned by search_datasets.",
+    inputSchema: getDatasetShape,
+    outputSchema: getDatasetOutputShape,
+    execute: (input) => getDataset(stac, ogc, input),
+    summarize
+  });
 }

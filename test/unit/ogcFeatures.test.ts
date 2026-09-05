@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  findCollectionsForDataset,
-  findParcelCollection,
-  OgcFeaturesClient
-} from "../../src/clients/ogcFeatures";
+import { OgcFeaturesClient } from "../../src/clients/ogcFeatures";
+import { findCollectionsForDataset, findParcelCollection } from "../../src/discovery";
 
 const collection = {
   id: "ch.bs.strassennamen_stna",

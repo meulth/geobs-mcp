@@ -169,8 +169,9 @@ For a private or workspace-only test, developer mode is the intended route; publ
 - Requests can reach only the fixed `https://api.geo.bs.ch` origin.
 - No tool accepts a URL, HTTP method, SQL statement or raw query string.
 - IDs, property names, filter values, CRS values, result counts and spatial radii are validated.
-- Feature responses are limited to 25 records and MCP output to approximately 250 KB.
-- GeoBS requests have abort timeouts and response byte limits.
+- Feature responses are limited to 25 records. Every successful MCP result is limited to 250,000 UTF-8 bytes, including its summary, JSON text and structured content (before the transport envelope).
+- Large feature results omit geometry first, then reduce records while keeping the returned count accurate. Property results can omit geometry. Responses that still exceed the limit return `RESPONSE_TOO_LARGE`; search and dataset results also pass the final size check.
+- GeoBS requests have abort timeouts and response byte limits enforced while reading the response stream.
 - Redirects are not followed.
 - The Search/Grundstückinfo key is sent only in the server-side `apikey` header.
 - Errors contain stable codes and no stack traces, response bodies or secrets.
@@ -184,8 +185,12 @@ Because the endpoint is anonymous, anyone who knows the deployed URL can invoke 
 ```text
 src/
   clients/          GeoBS HTTP clients and response types
-  tools/            validation, orchestration and response mapping
-  mcp/server.ts     five MCP tool registrations
+  tools/            each tool's schemas, registration, orchestration and response mapping
+  schemas.ts        shared identifier, coordinate and property validation
+  discovery.ts      GeoBS-specific STAC/OGC and parcel discovery heuristics
+  mcp/server.ts     server and client composition
+  mcp/register.ts   shared read-only annotations, execution and error handling
+  mcp/results.ts    consistent text/structured results and final output size check
   http.ts           origin allowlist, timeout, size and error handling
   index.ts          stateless Cloudflare Worker entry point
 test/
@@ -197,6 +202,13 @@ docs/
 ```
 
 GeoBS domain logic is independent of the Worker entry point and can be tested with injected `fetch` mocks.
+
+To add a tool, keep its input/output schemas and `registerReadOnlyTool` call in
+the tool module, then call its registration function from `mcp/server.ts`.
+The shared registration handles MCP errors and output limits. Tools with a
+reduction policy use the same result sizing helper, including their summary,
+before the final check. API clients share validation schemas with the tools;
+GeoBS naming heuristics are kept separate from HTTP access.
 
 ## Further documentation
 

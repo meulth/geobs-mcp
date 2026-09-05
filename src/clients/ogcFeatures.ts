@@ -6,6 +6,11 @@ import {
 } from "../config";
 import { GeoBsError } from "../errors";
 import { fetchJson, type FetchLike } from "../http";
+import type { z } from "zod";
+import {
+  bboxSchema, collectionIdSchema, outputPropertiesSchema,
+  propertyFilterSchema, propertyNameSchema, propertyValueSchema
+} from "../schemas";
 
 export interface OgcLink {
   href: string;
@@ -44,13 +49,10 @@ interface FeatureCollection {
   links?: OgcLink[];
 }
 
-export interface PropertyFilter {
-  property: string;
-  value: string | number | boolean;
-}
+export type PropertyFilter = z.output<typeof propertyFilterSchema>;
 
 export interface FeatureQuery {
-  bbox?: [number, number, number, number];
+  bbox?: z.output<typeof bboxSchema>;
   bboxEpsg?: SupportedEpsg;
   outputEpsg?: SupportedEpsg;
   limit?: number;
@@ -75,25 +77,28 @@ const reservedParameters = new Set([
   "map"
 ]);
 
-function validateCollectionId(id: string): void {
-  if (!/^[A-Za-z0-9._-]{1,300}$/.test(id)) {
+function validateCollectionId(id: string): string {
+  const parsed = collectionIdSchema.safeParse(id);
+  if (!parsed.success) {
     throw new GeoBsError("INVALID_INPUT", "Invalid OGC collection ID.");
   }
+  return parsed.data;
 }
 
-function validatePropertyName(name: string): void {
-  if (!/^[\p{L}\p{N} _.-]{1,100}$/u.test(name)) {
+function validatePropertyName(name: string): string {
+  const parsed = propertyNameSchema.safeParse(name);
+  if (!parsed.success) {
     throw new GeoBsError(
       "INVALID_INPUT",
       "Feature property names may only contain letters, numbers, spaces, dots, underscores and hyphens."
     );
   }
+  return parsed.data;
 }
 
 function validateBbox(bbox: number[]): asserts bbox is [number, number, number, number] {
   if (
-    bbox.length !== 4 ||
-    bbox.some((value) => !Number.isFinite(value)) ||
+    !bboxSchema.safeParse(bbox).success ||
     bbox[0]! > bbox[2]! ||
     bbox[1]! > bbox[3]!
   ) {
@@ -125,7 +130,7 @@ export class OgcFeaturesClient {
   }
 
   async getCollection(id: string): Promise<OgcCollection> {
-    validateCollectionId(id);
+    id = validateCollectionId(id);
     const url = new URL(
       `${API_URLS.ogcFeatures}/collections/${encodeURIComponent(id)}`
     );
@@ -147,7 +152,7 @@ export class OgcFeaturesClient {
     collectionId: string,
     query: FeatureQuery
   ): Promise<FeatureQueryResult> {
-    validateCollectionId(collectionId);
+    collectionId = validateCollectionId(collectionId);
     const collection = await this.getCollection(collectionId);
     const bboxEpsg = query.bboxEpsg ?? 2056;
     const outputEpsg = query.outputEpsg ?? bboxEpsg;
@@ -176,14 +181,13 @@ export class OgcFeaturesClient {
       url.searchParams.set("bbox-crs", CRS[bboxEpsg]);
     }
 
-    const properties = [...new Set(query.properties ?? [])];
-    if (properties.length > 30) {
+    const properties = [...new Set((query.properties ?? []).map(validatePropertyName))];
+    if (!outputPropertiesSchema.safeParse(properties).success) {
       throw new GeoBsError(
         "INVALID_INPUT",
         "At most 30 output properties may be selected."
       );
     }
-    for (const property of properties) validatePropertyName(property);
     if (properties.length > 0) {
       url.searchParams.set("properties", properties.join(","));
     }
@@ -196,21 +200,21 @@ export class OgcFeaturesClient {
       );
     }
     for (const filter of filters) {
-      validatePropertyName(filter.property);
-      if (reservedParameters.has(filter.property.toLowerCase())) {
+      const property = validatePropertyName(filter.property);
+      if (reservedParameters.has(property.toLowerCase())) {
         throw new GeoBsError(
           "INVALID_INPUT",
           `The reserved query parameter ${filter.property} cannot be used as a property filter.`
         );
       }
       const value = String(filter.value);
-      if (value.length > 200) {
+      if (!propertyValueSchema.safeParse(filter.value).success) {
         throw new GeoBsError(
           "INVALID_INPUT",
           "Feature filter values may contain at most 200 characters."
         );
       }
-      url.searchParams.append(filter.property, value);
+      url.searchParams.append(property, value);
     }
 
     const response = await fetchJson<FeatureCollection>(url, {
@@ -227,34 +231,4 @@ export class OgcFeaturesClient {
     response.data.features = response.data.features.slice(0, limit);
     return { collection, featureCollection: response.data, outputEpsg };
   }
-}
-
-export function findCollectionsForDataset(
-  datasetId: string,
-  collections: OgcCollection[]
-): OgcCollection[] {
-  if (!/^[A-Za-z0-9._-]{1,100}$/.test(datasetId)) return [];
-  const code = datasetId.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`(?:^|_)${code}(?:\\.|$)`, "i");
-  return collections.filter((collection) => pattern.test(collection.id));
-}
-
-export function findParcelCollection(
-  collections: OgcCollection[]
-): OgcCollection | undefined {
-  return collections
-    .map((collection) => {
-      const text = `${collection.id} ${collection.title ?? ""} ${
-        collection.description ?? ""
-      }`.toLocaleLowerCase("de-CH");
-      let score = 0;
-      if (/(^|[._ ])liegenschaft([._ ]|$)/.test(text)) score += 8;
-      if (text.includes("parzellen")) score += 4;
-      if (text.includes("rechtliche abgrenzungen")) score += 3;
-      if (text.includes("egrid")) score += 2;
-      if (text.includes("laufende_aenderung")) score -= 5;
-      return { collection, score };
-    })
-    .filter((candidate) => candidate.score >= 8)
-    .sort((a, b) => b.score - a.score)[0]?.collection;
 }

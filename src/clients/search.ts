@@ -1,6 +1,7 @@
 import { API_URLS, LIMITS, type SupportedEpsg } from "../config";
 import { GeoBsError } from "../errors";
 import { fetchJson, requireApiKey, type FetchLike } from "../http";
+import { locationQuerySchema } from "../schemas";
 
 export const SEARCH_TYPES = [
   "Adresse",
@@ -40,7 +41,7 @@ export class SearchClient {
 
   async search(term: string, options: SearchOptions = {}): Promise<SearchResult[]> {
     const query = term.trim();
-    if (query.length < 2 || query.length > 200) {
+    if (!locationQuerySchema.safeParse(query).success) {
       throw new GeoBsError(
         "INVALID_INPUT",
         "Search terms must contain between 2 and 200 characters."

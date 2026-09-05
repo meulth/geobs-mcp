@@ -1,6 +1,7 @@
 import { API_URLS, LIMITS } from "../config";
 import { GeoBsError } from "../errors";
 import { fetchJson, type FetchLike } from "../http";
+import { datasetIdSchema } from "../schemas";
 
 export interface StacLink {
   href: string;
@@ -56,10 +57,12 @@ interface ItemCollection {
   numberReturned?: number;
 }
 
-function validateId(id: string): void {
-  if (!/^[A-Za-z0-9._-]{1,100}$/.test(id)) {
+function validateId(id: string): string {
+  const parsed = datasetIdSchema.safeParse(id);
+  if (!parsed.success) {
     throw new GeoBsError("INVALID_INPUT", "Invalid STAC dataset ID.");
   }
+  return parsed.data;
 }
 
 function assertCollectionList(value: CollectionList): StacCollection[] {
@@ -85,7 +88,7 @@ export class StacClient {
   }
 
   async getCollection(id: string): Promise<StacCollection> {
-    validateId(id);
+    id = validateId(id);
     const url = new URL(`collections/${encodeURIComponent(id)}`, API_URLS.stac);
     const response = await fetchJson<StacCollection>(url, {
       fetcher: this.fetcher,
@@ -101,7 +104,7 @@ export class StacClient {
   }
 
   async listItems(id: string, limit = 10): Promise<StacItem[]> {
-    validateId(id);
+    id = validateId(id);
     const safeLimit = Math.max(1, Math.min(10, Math.trunc(limit)));
     const url = new URL(
       `collections/${encodeURIComponent(id)}/items`,

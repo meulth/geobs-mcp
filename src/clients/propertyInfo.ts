@@ -1,6 +1,7 @@
 import { API_URLS, LIMITS } from "../config";
 import { GeoBsError } from "../errors";
 import { fetchJson, requireApiKey, type FetchLike } from "../http";
+import { propertyIdsSchema } from "../schemas";
 
 export interface PropertyInfoResponse {
   Date?: string;
@@ -16,7 +17,7 @@ function validateIds(ids: string[]): string[] {
     );
   }
   const normalized = ids.map((id) => id.trim().toUpperCase());
-  if (normalized.some((id) => !/^[A-Z0-9-]{2,40}$/.test(id))) {
+  if (!propertyIdsSchema.safeParse(normalized).success) {
     throw new GeoBsError(
       "INVALID_INPUT",
       "Property IDs must be E-GRIDs or section/parcel identifiers."

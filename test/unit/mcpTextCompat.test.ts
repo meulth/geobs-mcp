@@ -3,7 +3,8 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/client";
 import type { CallToolResult } from "@modelcontextprotocol/client";
 import { createGeoBsServer } from "../../src/mcp/server";
-import { CRS } from "../../src/config";
+import { CRS, LIMITS } from "../../src/config";
+import { jsonByteLength } from "../../src/mcp/results";
 
 /**
  * Regression coverage for a real MCP-client incompatibility: some clients
@@ -268,6 +269,110 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       });
       expect(features.isError).toBeFalsy();
       expect(structuredContentFromText(features)).toEqual(features.structuredContent);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("discovers all five tool schemas and their read-only annotations", async () => {
+    const { client, server } = await connectClient();
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name)).toEqual([
+        "search_location", "search_datasets", "get_dataset", "query_features", "get_property_info"
+      ]);
+      for (const tool of tools) {
+        expect(tool.inputSchema.type).toBe("object");
+        expect(tool.outputSchema?.type).toBe("object");
+        expect(tool.annotations).toMatchObject({
+          readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false
+        });
+      }
+      // Published schemas must retain their constraints, not only runtime validation.
+      const inputs = Object.fromEntries(tools.map((tool) => [tool.name, tool.inputSchema]));
+      expect(inputs.get_dataset).toMatchObject({ properties: {
+        id: { type: "string", pattern: "^[A-Za-z0-9._-]{1,100}$" }
+      } });
+      expect(inputs.query_features).toMatchObject({ properties: {
+        collectionId: { pattern: "^[A-Za-z0-9._-]{1,300}$" },
+        limit: { default: 10, minimum: 1, maximum: 25 },
+        properties: { type: "array", maxItems: 30 },
+        filters: { type: "array", maxItems: 5 }
+      } });
+      expect(inputs.get_property_info).toMatchObject({ properties: {
+        ids: { minItems: 1, maxItems: 10, items: { pattern: "^[A-Za-z0-9-]{2,40}$" } }
+      } });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it.each([
+    {
+      name: "search_location", arguments: { query: "Basel" },
+      path: "/search/v2/search",
+      body: [{ label: "Basel", layer_name: "Adresse", geom: "POINT (0 0)", details: { text: "x".repeat(130_000) } }]
+    },
+    {
+      name: "search_datasets", arguments: { query: "Strassen" },
+      path: "/stac/v1/collections",
+      body: { collections: [{ id: "STNA", title: "Strassen", keywords: ["x".repeat(130_000)] }] }
+    },
+    {
+      name: "get_dataset", arguments: { id: "STNA" },
+      path: "/stac/v1/collections/STNA",
+      body: { id: "STNA", assets: { bulk: { href: "https://api.geo.bs.ch/" + "x".repeat(130_000) } } }
+    },
+    {
+      name: "query_features", arguments: { collectionId: STNA_COLLECTION_ID },
+      path: `/ogc/v1/wfs3/collections/${STNA_COLLECTION_ID}/items`,
+      body: { features: [{ type: "Feature", properties: { text: "x".repeat(130_000) } }] }
+    },
+    {
+      name: "get_property_info", arguments: { ids: ["CH773573575017"] },
+      path: "/grundstueckinfo/v1/realestatesinformation",
+      body: { RealEstates: [{ text: "x".repeat(130_000) }] }
+    }
+  ])("$name returns a bounded MCP error for oversized data", async (testCase) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      return url.pathname === testCase.path ? jsonResponse(testCase.body) : routeFetch(url)!;
+    }));
+    const { client, server } = await connectClient();
+    try {
+      const result = await client.callTool({ name: testCase.name, arguments: testCase.arguments });
+      expect(result.isError).toBe(true);
+      expect(structuredContentFromText(result)).toMatchObject({ error: "RESPONSE_TOO_LARGE" });
+      expect(jsonByteLength(result)).toBeLessThanOrEqual(LIMITS.maxToolOutputBytes);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("query_features reports the reduced count in both JSON and its MCP summary", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname === `/ogc/v1/wfs3/collections/${STNA_COLLECTION_ID}/items`) {
+        return jsonResponse({
+          numberMatched: 3,
+          features: Array.from({ length: 3 }, (_, id) => ({
+            type: "Feature", id, properties: { text: "x".repeat(50_000) }
+          }))
+        });
+      }
+      return routeFetch(url)!;
+    }));
+    const { client, server } = await connectClient();
+    try {
+      const result = await client.callTool({ name: "query_features", arguments: { collectionId: STNA_COLLECTION_ID } });
+      expect(result.isError).toBeFalsy();
+      expect(result.structuredContent).toMatchObject({ numberReturned: 2, numberMatched: 3, outputTruncated: true });
+      expect(structuredContentFromText(result)).toEqual(result.structuredContent);
+      expect(textBlocks(result)[0]).toBe(`Returned 2 bounded feature(s) from ${STNA_COLLECTION_ID}.`);
+      expect(jsonByteLength(result)).toBeLessThanOrEqual(LIMITS.maxToolOutputBytes);
     } finally {
       await client.close();
       await server.close();

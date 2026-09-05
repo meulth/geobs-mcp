@@ -1,7 +1,26 @@
+import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/server";
+import { registerReadOnlyTool } from "../mcp/register";
+import { LIMITS } from "../config";
 import type { StacClient, StacCollection } from "../clients/stac";
 import { GeoBsError } from "../errors";
 import { compactText, selectLinks } from "./output";
-import { searchDatasetsInput } from "./schemas";
+
+const searchDatasetsShape = {
+  query: z.string().trim().min(2).max(100).describe("German or English dataset topic, title or identifier."),
+  limit: z.number().int().min(1).max(LIMITS.maxDatasetResults).default(8)
+};
+
+const searchDatasetsInput = z.object(searchDatasetsShape);
+
+const searchDatasetsOutputShape = {
+  query: z.string(),
+  searchedCollectionCount: z.number().int(),
+  resultCount: z.number().int(),
+  datasets: z.array(
+    z.object({ id: z.string(), title: z.string().optional() }).catchall(z.json())
+  )
+};
 
 function normalize(value: string): string {
   return value
@@ -70,4 +89,21 @@ export async function searchDatasets(client: StacClient, input: unknown) {
       links: selectLinks(collection.links)
     }))
   };
+}
+
+function summarize(output: Awaited<ReturnType<typeof searchDatasets>>): string {
+  return `Found ${output.resultCount} matching dataset(s) among ${output.searchedCollectionCount} STAC collections.`;
+}
+
+export function registerSearchDatasets(server: McpServer, client: StacClient) {
+  registerReadOnlyTool(server, {
+    name: "search_datasets",
+    title: "Search GeoBS datasets",
+    description:
+      "Search live GeoBS STAC collection metadata by topic, title, keyword or ID. No dataset list is hardcoded. Call get_dataset with a returned ID for assets and feature-collection discovery.",
+    inputSchema: searchDatasetsShape,
+    outputSchema: searchDatasetsOutputShape,
+    execute: (input) => searchDatasets(client, input),
+    summarize
+  });
 }

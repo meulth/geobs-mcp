@@ -66,6 +66,45 @@ function statusError(status: number, notFoundCode?: JsonRequestOptions["notFound
   );
 }
 
+async function readBoundedBody(response: Response, maxBytes: number): Promise<Uint8Array> {
+  const tooLarge = () => new GeoBsError(
+    "RESPONSE_TOO_LARGE",
+    "The GeoBS API response exceeded the configured safety limit."
+  );
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel();
+    throw tooLarge();
+  }
+  if (!response.body) return new Uint8Array();
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > maxBytes) {
+        await reader.cancel();
+        throw tooLarge();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 export async function fetchJson<T>(
   url: URL | string,
   options: JsonRequestOptions = {}
@@ -96,22 +135,7 @@ export async function fetchJson<T>(
       throw statusError(response.status, options.notFoundCode);
     }
 
-    const maxBytes = options.maxBytes ?? LIMITS.maxJsonBytes;
-    const declaredLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-      throw new GeoBsError(
-        "RESPONSE_TOO_LARGE",
-        "The GeoBS API response exceeded the configured safety limit."
-      );
-    }
-
-    const body = await response.arrayBuffer();
-    if (body.byteLength > maxBytes) {
-      throw new GeoBsError(
-        "RESPONSE_TOO_LARGE",
-        "The GeoBS API response exceeded the configured safety limit."
-      );
-    }
+    const body = await readBoundedBody(response, options.maxBytes ?? LIMITS.maxJsonBytes);
 
     try {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(body);
@@ -130,8 +154,8 @@ export async function fetchJson<T>(
   } catch (error) {
     if (error instanceof GeoBsError) throw error;
     if (
-      error instanceof DOMException &&
-      (error.name === "AbortError" || controller.signal.aborted)
+      controller.signal.aborted ||
+      (error instanceof DOMException && error.name === "AbortError")
     ) {
       throw new GeoBsError(
         "TIMEOUT",

@@ -1,12 +1,26 @@
-import {
-  findParcelCollection,
-  type OgcFeaturesClient
-} from "../clients/ogcFeatures";
+import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/server";
+import { registerReadOnlyTool } from "../mcp/register";
+import { pointSchema, propertyIdsSchema } from "../schemas";
+import type { OgcFeaturesClient } from "../clients/ogcFeatures";
+import { findParcelCollection } from "../discovery";
 import type { PropertyInfoClient } from "../clients/propertyInfo";
 import { GeoBsError } from "../errors";
-import { mcpResultByteLength } from "./output";
-import { getPropertyInfoInput } from "./schemas";
-import { LIMITS } from "../config";
+import { fitsToolOutput } from "../mcp/results";
+
+const getPropertyInfoShape = {
+  ids: propertyIdsSchema.optional().describe("E-GRID or section/parcel IDs."),
+  point: pointSchema.optional().describe("A point, normally copied from search_location."),
+  withGeometry: z.boolean().default(false)
+};
+
+const getPropertyInfoInput = z.object(getPropertyInfoShape);
+
+const getPropertyInfoOutputShape = {
+  resolvedFrom: z.object({ type: z.enum(["ids", "point"]) }).catchall(z.json()),
+  requestedIds: z.array(z.string()),
+  realEstates: z.array(z.record(z.string(), z.json()))
+};
 
 function findEgrid(properties: Record<string, unknown> | null | undefined): string | undefined {
   if (!properties) return undefined;
@@ -90,17 +104,34 @@ export async function getPropertyInfo(
     date: response.Date,
     realEstates: response.RealEstates
   };
-  if (mcpResultByteLength(output) > LIMITS.maxToolOutputBytes) {
+  if (!fitsToolOutput(output, summarize(output))) {
     output = {
       ...(stripGeometry(output) as Record<string, unknown>),
       geometryOmitted: true
     };
   }
-  if (mcpResultByteLength(output) > LIMITS.maxToolOutputBytes) {
+  if (!fitsToolOutput(output, summarize(output))) {
     throw new GeoBsError(
       "RESPONSE_TOO_LARGE",
       "The property response is too large even without geometry."
     );
   }
   return output;
+}
+
+function summarize(output: Record<string, unknown>): string {
+  return `Returned information for ${Array.isArray(output.realEstates) ? output.realEstates.length : 0} real estate(s).`;
+}
+
+export function registerGetPropertyInfo(server: McpServer, propertyInfo: PropertyInfoClient, ogc: OgcFeaturesClient) {
+  registerReadOnlyTool(server, {
+    name: "get_property_info",
+    title: "Get Basel-Stadt property information",
+    description:
+      "Get parcel, building, address and land-cover information from Grundstückinfo. Accepts E-GRID/parcel IDs or a point returned by search_location. Point input dynamically discovers the parcel feature collection and resolves its E-GRID first.",
+    inputSchema: getPropertyInfoShape,
+    outputSchema: getPropertyInfoOutputShape,
+    execute: (input) => getPropertyInfo(propertyInfo, ogc, input),
+    summarize
+  });
 }
