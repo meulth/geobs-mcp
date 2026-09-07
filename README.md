@@ -2,11 +2,11 @@
 
 Open-source MCP server for accessing Basel-Stadt geospatial data via STAC, OGC API Features and GeoBS APIs.
 
-`geobs-mcp` is a read-only Remote MCP server for Cloudflare Workers. It exposes six focused geo tools through a stateless MCP handler, with a shared weekly OGC metadata catalog in Workers KV. It supports the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2 and Grundstückinfo.
+`geobs-mcp` is a read-only Remote MCP server for Cloudflare Workers. It exposes five focused geo tools through a stateless MCP handler, with a shared weekly OGC metadata catalog in Workers KV. It supports the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2 and Grundstückinfo.
 
 ## Status
 
-V1 PoC is locally functional and deployable. It uses:
+The server exposes five read-only tools. It uses:
 
 - TypeScript and Cloudflare Workers
 - the stable MCP TypeScript SDK v2 via `@modelcontextprotocol/server`
@@ -21,14 +21,30 @@ The design follows the current [Cloudflare stateless MCP handler documentation](
 
 | Tool | GeoBS API | Purpose |
 | --- | --- | --- |
-| `search_location` | Search v2 | Resolve addresses, streets, places and supported identifiers to reusable geometry/coordinates. |
-| `search_datasets` | STAC | Search all current collection metadata dynamically. |
-| `get_dataset` | STAC + WFS3 | Return metadata, assets, items and dynamically related feature collections. |
-| `query_features` | OGC API Features | Run bounded bbox or point/radius feature queries with controlled exact filters. |
+| `search_api_v2` | Search v2 | Resolve addresses, streets, places and supported identifiers to reusable geometry/coordinates. |
+| `get_dataset_stac` | STAC + WFS3 | Return metadata, assets, items and dynamically related feature collections. |
+| `query_features_ogc` | OGC API Features | Run bounded bbox or point/radius feature queries with controlled exact filters. |
 | `get_property_info` | WFS3 + Grundstückinfo | Resolve a point to an E-GRID, then return parcel, building and land-cover information. |
-| `search_feature_collections` | Cached WFS3 catalog | Find exact layer IDs by ID, title and description; separate layers, ranked matches, reasons and catalog age. |
+| `search_datasets_ogc` | Cached WFS3 catalog | Search topics, titles, descriptions and IDs; return exact layer IDs, inferred four-character STAC product IDs, match reasons and catalog age. |
 
 All tools advertise read-only, non-destructive, idempotent and closed-world annotations. Their inputs and structured outputs have JSON schemas.
+
+`search_api_v2` uses **GeoBS Search API v2**, at `/search/v2`.
+
+The tool renames from the previous interface are `search_location` → `search_api_v2`, `get_dataset` →
+`get_dataset_stac`, `search_feature_collections` → `search_datasets_ogc`, and
+`query_features` → `query_features_ogc`. `get_property_info` is unchanged.
+There are no aliases for old names; the tool count remains five. Refresh client
+tool lists after deployment and update integrations that call the old names.
+
+`search_datasets_ogc` replaces `search_datasets`. Pass a result's `id` to
+`query_features_ogc`, or its `stacDatasetId` to `get_dataset_stac` for live metadata and
+downloads. The product ID is inferred from the GeoBS OGC naming convention;
+`stacDatasetIdSource` identifies that provenance, and unmatched IDs omit the field.
+Several layers can share a product ID. No STAC catalog request is made during
+topic search. Products without OGC layers cannot be found by this search but
+remain accessible through `get_dataset_stac` when their ID is known. After deploying
+this change, refresh existing MCP connections to remove the old tool.
 
 ## Quick start
 
@@ -82,7 +98,7 @@ The CLI can verify schemas and invoke a tool without a browser:
 ```bash
 npx @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8787/mcp --method tools/list --strict --format json
 
-npx @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8787/mcp --method tools/call --tool-name search_datasets --tool-arg query=Strassennamen limit=2 --format json
+npx @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8787/mcp --method tools/call --tool-name search_datasets_ogc --tool-arg query=Strassennamen limit=2 --format json
 ```
 
 ## Tests
@@ -96,11 +112,11 @@ npm run test:integration
 
 The validated V1 scenarios are:
 
-- discover datasets for `Strassen`
+- discover OGC layers and their inferred STAC product IDs for `Strassennamen`
 - load STAC metadata and assets for `STNA` (Strassennamen)
 - query WFS3 near Dufourstrasse 40 in EPSG:2056
 - with a key: resolve the address, dynamically find its parcel/E-GRID and retrieve Grundstückinfo
-- list and call the six tools through the Streamable HTTP MCP endpoint
+- list and call the five tools through the Streamable HTTP MCP endpoint
 - search OGC metadata directly, including multiple layers per product, without a full upstream catalog request
 
 ## Deploy to Cloudflare Workers
@@ -164,32 +180,17 @@ After deployment:
 1. Confirm the public HTTPS `/mcp` URL with MCP Inspector.
 2. In ChatGPT settings, open **Security and login** and enable **Developer mode**. Availability can depend on account and workspace policy.
 3. Open ChatGPT Plugins, add a connection, and enter the complete `https://…workers.dev/mcp` URL.
-4. Review the six discovered tools and start a new conversation with the connection enabled.
+4. Review the five discovered tools and start a new conversation with the connection enabled.
 5. Try: `Gib mir alle verfügbaren Informationen zur Dufourstrasse 40.`
 
 For a private or workspace-only test, developer mode is the intended route; public plugin submission is not required. If a future deployment exposes user-specific data or write actions, implement MCP-conformant OAuth 2.1 then—not in this read-only V1.
 
 ### Tool-schema refresh compatibility
 
-On 7 September 2026, ChatGPT reported `Invalid MCP tool schema for tool
-'query_features'` while refreshing the connection. The deployed `bbox` schema
-used Zod's tuple representation (`prefixItems` without `items`). It now uses a
-homogeneous numeric array with `items`, `minItems: 4` and `maxItems: 4`.
-The two-value coordinate output uses the same portable representation.
-Runtime checks still reject incorrect lengths and nonnumeric coordinates.
-
-The MCP regression tests inspect the actual `tools/list` response for this
-array shape across all input and output schemas. These tests do not run
-ChatGPT's private importer; after deploying a schema change, refresh the
-existing connection in ChatGPT to verify that client as well.
-
-The same day, the remaining ChatGPT refresh failure was isolated to Unicode
-property escapes (`\p{L}`, `\p{N}`) in the published field-name patterns of
-`query_features`. Field names now publish length constraints and a description;
-the original Unicode allowlist is enforced server-side by a Zod refinement.
-After this targeted change, the existing connection refreshed successfully in
-ChatGPT and displayed the new `search_feature_collections` tool. See the
-[diagnosis and browser acceptance](docs/chatgpt-schema-refresh.md).
+Tool schemas use homogeneous fixed-length arrays and server-side Unicode
+field-name validation for compatibility across MCP clients. Refresh connection
+metadata after tool-name or schema changes. See [schema compatibility](docs/chatgpt-schema-refresh.md)
+for implementation details and verification guidance.
 
 ## Security model
 
@@ -240,10 +241,14 @@ GeoBS naming heuristics are kept separate from HTTP access.
 
 ## Further documentation
 
+Public documentation contains reusable project guidance. Keep personal deployment
+records, account details and infrastructure handoffs in the Git-ignored
+`.private/` directory; do not force-add it to source control.
+
 - [Observed GeoBS APIs and STAC↔WFS3 analysis](docs/api-analysis.md)
 - [End-to-end workflow and V2 outlook](docs/workflow.md)
-- [Grafana monitoring: analysis, event schema and collector contract](docs/monitoring.md)
-- [Project ideas and status for dashboard-guy](docs/ideas.md)
+- [Structured telemetry and collector guidance](docs/monitoring.md)
+- [Project roadmap](docs/ideas.md)
 - [OGC catalog: search, cache and operations](docs/ogc-catalog.md)
 - [GeoBS terms of use](https://geo.bs.ch/agb)
 

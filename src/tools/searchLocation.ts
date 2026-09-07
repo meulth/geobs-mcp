@@ -66,10 +66,10 @@ function summarize(output: Awaited<ReturnType<typeof searchLocation>>): string {
 
 export function registerSearchLocation(server: McpServer, client: SearchClient) {
   registerReadOnlyTool(server, {
-    name: "search_location",
+    name: "search_api_v2",
     title: "Search a Basel-Stadt location",
     description:
-      "Resolve an address, street, place, parcel identifier or other GeoBS search object. Returns reusable coordinates and the CRS. For an address workflow, pass the returned point to get_property_info.",
+      "Resolve an address, street, place, parcel identifier or other GeoBS search object through GeoBS Search API v2. Returns reusable coordinates and the CRS. For an address workflow, pass the returned point to get_property_info.",
     inputSchema: searchLocationShape,
     outputSchema: searchLocationOutputShape,
     execute: (input) => searchLocation(client, input),

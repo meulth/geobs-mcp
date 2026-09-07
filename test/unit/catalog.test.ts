@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { catalogStatus, CATALOG_KEY, CATALOG_URL, createCatalogSnapshot, isCatalogRefreshTime, KvCatalog } from "../../src/catalog";
 import worker from "../../src/index";
 import { searchFeatureCollections } from "../../src/tools/searchFeatureCollections";
+import { inferStacDatasetId } from "../../src/discovery";
 
 const NOW = Date.parse("2026-09-09T01:00:00Z");
 const DAY = 86_400_000;
@@ -132,6 +133,32 @@ describe("direct OGC collection search", () => {
     expect(result.catalogStale).toBe(false);
   });
 
+  it("returns one inferred product ID for separate layers without guessing from titles", async () => {
+    const result = await searchFeatureCollections(await reader([
+      { id: "ch.bs.av_parzellen_rechtliche_abgrenzungen_avpz.liegenschaft", title: "Parzellen" },
+      { id: "ch.bs.av_parzellen_rechtliche_abgrenzungen_avpz.grenzpunkt", title: "Parzellen" },
+      { id: "ch.bs.unknown.layer_stna", title: "Parzellen AVPZ" }
+    ]), { query: "Parzellen" });
+    expect(result).toMatchObject({ totalMatches: 3, stacDatasetIdSource: "ogc_id_naming_convention" });
+    expect(result.collections.filter(row => row.stacDatasetId === "AVPZ")).toHaveLength(2);
+    expect(result.collections.find(row => row.id === "ch.bs.unknown.layer_stna")?.stacDatasetId).toBeUndefined();
+  });
+
+  it.each([
+    ["ch.bs.strassennamen_stna", "STNA"],
+    ["ch.bs.av_parzellen_rechtliche_abgrenzungen_avpz.liegenschaft", "AVPZ"],
+    ["ch.bs.product_a1b2.layer", "A1B2"],
+    ["CH.BS.PRODUCT_StNa.layer", "STNA"],
+    ["ch.bs.avpz.layer_stna", "AVPZ"],
+    ["ch.bs.product_abc.layer_stna", undefined],
+    ["ch.bs.product_abcde.layer", undefined],
+    ["ch.bs.product.layer_stna", undefined],
+    ["ch.zh.product_stna.layer", undefined],
+    ["https://example.test/ch.bs.product_stna", undefined]
+  ])("infers only the four-character product segment in %s", (id, expected) => {
+    expect(inferStacDatasetId(id)).toBe(expected);
+  });
+
   it("returns a literal ID first and an exact title before descriptive matches", async () => {
     const catalog = await reader([...rows, { id: "ch.bs.other", title: rows[0]!.id },
       { id: "ch.bs.first", description: "Bäume" }]);
@@ -152,6 +179,7 @@ describe("direct OGC collection search", () => {
     const result = await searchFeatureCollections(catalog, { query: "avpz", limit: 20 });
     expect(result).toMatchObject({ totalMatches: 21, resultCount: 20, truncated: true });
     expect(result.collections[0]!.id).toBe("ch.bs.avpz.layer_00");
+    expect(result.collections.every(row => row.stacDatasetId === "AVPZ")).toBe(true);
     expect(result.collections[0]!.title!.length).toBeLessThanOrEqual(300);
     expect(result.collections[0]!.description!.length).toBeLessThanOrEqual(600);
     expect((await searchFeatureCollections(catalog, { query: "avpz" })).resultCount).toBe(8);

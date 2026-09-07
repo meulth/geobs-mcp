@@ -11,7 +11,7 @@ Base URL: `https://api.geo.bs.ch/stac/v1/`
 - 95 collections were returned during analysis.
 - Collections provide ID, title, description, keywords, themes, providers, license, spatial/temporal extent, `proj:code`, links and optional assets.
 - Items represent published versions such as `latest` and expose download assets including GeoJSON, CSV, FlatGeobuf, GeoPackage, Shapefile and FileGDB where available.
-- Dataset search in the MCP fetches current collections and ranks their metadata locally. No dataset list is embedded in the project.
+- The original MCP dataset search fetched collections and ranked metadata locally. Current topic discovery uses the OGC cache through `search_datasets_ogc`; `get_dataset_stac` loads a known product and its items directly.
 
 For `STNA`, the observed collection title is `Strassennamen`, its declared CRS is EPSG:2056, and its `latest` item exposes multiple download formats.
 
@@ -59,7 +59,7 @@ The JSON endpoints require one or more E-GRIDs or section/parcel identifiers in 
 
 The service does not accept a point directly. `get_property_info` therefore uses this dynamic read-only sequence when given a Search result point:
 
-1. fetch current WFS3 collection metadata;
+1. read WFS3 collection metadata from the weekly cache;
 2. identify the parcel/real-estate collection semantically, without a fixed collection ID;
 3. query the exact point in the point CRS;
 4. read the E-GRID property;

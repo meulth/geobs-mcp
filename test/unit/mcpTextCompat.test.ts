@@ -53,19 +53,6 @@ function routeFetch(url: URL): Response | undefined {
     ]);
   }
 
-  if (pathname === "/stac/v1/collections") {
-    return jsonResponse({
-      collections: [
-        {
-          id: "STNA",
-          title: "Strassennamen",
-          description: "Strassen und Plätze in Basel-Stadt",
-          keywords: ["Strasse"],
-          links: []
-        }
-      ]
-    });
-  }
   if (pathname === "/stac/v1/collections/STNA") {
     return jsonResponse({
       id: "STNA",
@@ -217,12 +204,12 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     fetchMock.mockClear();
   });
 
-  it("search_location: content text alone contains reusable coordinates, matching structuredContent", async () => {
+  it("search_api_v2: content text alone contains reusable coordinates, matching structuredContent", async () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, server } = await connectClient();
     try {
       const result = await client.callTool({
-        name: "search_location",
+        name: "search_api_v2",
         arguments: { query: "Schauenburgerstrasse 17" }
       });
 
@@ -240,12 +227,12 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     }
   });
 
-  it("get_property_info: a point copied from search_location's text resolves real estate info", async () => {
+  it("get_property_info: a point copied from search_api_v2's text resolves real estate info", async () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, server } = await connectClient();
     try {
       const search = await client.callTool({
-        name: "search_location",
+        name: "search_api_v2",
         arguments: { query: "Schauenburgerstrasse 17" }
       });
       const searchData = structuredContentFromText(search) as {
@@ -268,19 +255,26 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     }
   });
 
-  it("search_datasets -> get_dataset -> query_features: every result's content carries the full structured value", async () => {
+  it("cached search -> get_dataset_stac -> query_features_ogc preserves usable IDs and full text results", async () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, server } = await connectClient();
     try {
       const datasets = await client.callTool({
-        name: "search_datasets",
+        name: "search_datasets_ogc",
         arguments: { query: "Strassen" }
       });
       expect(structuredContentFromText(datasets)).toEqual(datasets.structuredContent);
+      expect(fetchMock).not.toHaveBeenCalled();
+      const searchData = structuredContentFromText(datasets) as {
+        collections: Array<{ id: string; stacDatasetId?: string }>;
+        stacDatasetIdSource: string;
+      };
+      expect(searchData.stacDatasetIdSource).toBe("ogc_id_naming_convention");
+      expect(searchData.collections[0]?.stacDatasetId).toBe("STNA");
 
       const dataset = await client.callTool({
-        name: "get_dataset",
-        arguments: { id: "STNA" }
+        name: "get_dataset_stac",
+        arguments: { id: searchData.collections[0]!.stacDatasetId }
       });
       expect(structuredContentFromText(dataset)).toEqual(dataset.structuredContent);
       const collectionId = (
@@ -291,40 +285,43 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       expect(collectionId).toBe(STNA_COLLECTION_ID);
 
       const features = await client.callTool({
-        name: "query_features",
+        name: "query_features_ogc",
         arguments: { collectionId, bbox: [0, 0, 1, 1], limit: 5, includeGeometry: false }
       });
       expect(features.isError).toBeFalsy();
       expect(structuredContentFromText(features)).toEqual(features.structuredContent);
+      expect(fetchMock.mock.calls.every(([input]) =>
+        !["/stac/v1/collections", "/ogc/v1/wfs3/collections"].includes(new URL(String(input)).pathname)
+      )).toBe(true);
     } finally {
       await client.close();
       await server.close();
     }
   });
 
-  it("search_feature_collections -> query_features reuses exact IDs without fetching the full upstream catalog", async () => {
+  it("search_datasets_ogc -> query_features_ogc reuses exact IDs without fetching the full upstream catalog", async () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, server } = await connectClient();
     try {
-      const search = await client.callTool({ name: "search_feature_collections", arguments: { query: "Strassennamen" } });
+      const search = await client.callTool({ name: "search_datasets_ogc", arguments: { query: "Strassennamen" } });
       expect(search.isError).toBeFalsy();
       expect(structuredContentFromText(search)).toEqual(search.structuredContent);
       expect(fetchMock).not.toHaveBeenCalled();
       const id = (search.structuredContent as { collections: Array<{ id: string }> }).collections[0]!.id;
       expect(id).toBe(STNA_COLLECTION_ID);
-      const features = await client.callTool({ name: "query_features", arguments: { collectionId: id, limit: 1, includeGeometry: false } });
+      const features = await client.callTool({ name: "query_features_ogc", arguments: { collectionId: id, limit: 1, includeGeometry: false } });
       expect(features.isError).toBeFalsy();
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(fetchMock.mock.calls.every(([input]) => new URL(String(input)).pathname !== "/ogc/v1/wfs3/collections")).toBe(true);
     } finally { await client.close(); await server.close(); }
   });
 
-  it("discovers all six tool schemas and their read-only annotations", async () => {
+  it("discovers exactly five tool schemas and their read-only annotations", async () => {
     const { client, server } = await connectClient();
     try {
       const { tools } = await client.listTools();
       expect(tools.map((tool) => tool.name)).toEqual([
-        "search_location", "search_datasets", "get_dataset", "query_features", "get_property_info", "search_feature_collections"
+        "search_api_v2", "get_dataset_stac", "query_features_ogc", "get_property_info", "search_datasets_ogc"
       ]);
       for (const tool of tools) {
         expectPortableArrays(tool.inputSchema);
@@ -337,10 +334,10 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       }
       // Published schemas must retain their constraints, not only runtime validation.
       const inputs = Object.fromEntries(tools.map((tool) => [tool.name, tool.inputSchema]));
-      expect(inputs.get_dataset).toMatchObject({ properties: {
+      expect(inputs.get_dataset_stac).toMatchObject({ properties: {
         id: { type: "string", pattern: "^[A-Za-z0-9._-]{1,100}$" }
       } });
-      expect(inputs.query_features).toMatchObject({ properties: {
+      expect(inputs.query_features_ogc).toMatchObject({ properties: {
         bbox: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 },
         collectionId: { pattern: "^[A-Za-z0-9._-]{1,300}$" },
         limit: { default: 10, minimum: 1, maximum: 25 },
@@ -350,10 +347,14 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       expect(inputs.get_property_info).toMatchObject({ properties: {
         ids: { minItems: 1, maxItems: 10, items: { pattern: "^[A-Za-z0-9-]{2,40}$" } }
       } });
-      expect(inputs.search_feature_collections).toMatchObject({ properties: {
+      expect(inputs.search_datasets_ogc).toMatchObject({ properties: {
         query: { minLength: 2, maxLength: 300 },
         limit: { default: 8, minimum: 1, maximum: 20 }
       } });
+      expect(tools.find(tool => tool.name === "search_datasets_ogc")?.outputSchema)
+        .toMatchObject({ properties: { collections: { items: { properties: {
+          stacDatasetId: { type: "string", pattern: "^[A-Z0-9]{4}$" }
+        } } } } });
     } finally {
       await client.close();
       await server.close();
@@ -366,7 +367,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     vi.stubGlobal("fetch", fetchMock);
     const { client, server } = await connectClient();
     try {
-      const result = await client.callTool({ name: "query_features", arguments: {
+      const result = await client.callTool({ name: "query_features_ogc", arguments: {
         collectionId: STNA_COLLECTION_ID, bbox
       } });
       expect(result.isError).toBe(true);
@@ -379,22 +380,17 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
 
   it.each([
     {
-      name: "search_location", arguments: { query: "Basel" },
+      name: "search_api_v2", arguments: { query: "Basel" },
       path: "/search/v2/search",
       body: [{ label: "Basel", layer_name: "Adresse", geom: "POINT (0 0)", details: { text: "x".repeat(130_000) } }]
     },
     {
-      name: "search_datasets", arguments: { query: "Strassen" },
-      path: "/stac/v1/collections",
-      body: { collections: [{ id: "STNA", title: "Strassen", keywords: ["x".repeat(130_000)] }] }
-    },
-    {
-      name: "get_dataset", arguments: { id: "STNA" },
+      name: "get_dataset_stac", arguments: { id: "STNA" },
       path: "/stac/v1/collections/STNA",
       body: { id: "STNA", assets: { bulk: { href: "https://api.geo.bs.ch/" + "x".repeat(130_000) } } }
     },
     {
-      name: "query_features", arguments: { collectionId: STNA_COLLECTION_ID },
+      name: "query_features_ogc", arguments: { collectionId: STNA_COLLECTION_ID },
       path: `/ogc/v1/wfs3/collections/${STNA_COLLECTION_ID}/items`,
       body: { features: [{ type: "Feature", properties: { text: "x".repeat(130_000) } }] }
     },
@@ -420,7 +416,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     }
   });
 
-  it("query_features reports the reduced count in both JSON and its MCP summary", async () => {
+  it("query_features_ogc reports the reduced count in both JSON and its MCP summary", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       if (url.pathname === `/ogc/v1/wfs3/collections/${STNA_COLLECTION_ID}/items`) {
@@ -435,7 +431,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     }));
     const { client, server } = await connectClient();
     try {
-      const result = await client.callTool({ name: "query_features", arguments: { collectionId: STNA_COLLECTION_ID } });
+      const result = await client.callTool({ name: "query_features_ogc", arguments: { collectionId: STNA_COLLECTION_ID } });
       expect(result.isError).toBeFalsy();
       expect(result.structuredContent).toMatchObject({ numberReturned: 2, numberMatched: 3, outputTruncated: true });
       expect(structuredContentFromText(result)).toEqual(result.structuredContent);

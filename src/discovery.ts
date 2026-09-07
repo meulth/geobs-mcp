@@ -1,6 +1,14 @@
 import type { OgcCollection } from "./clients/ogcFeatures";
 import { datasetIdSchema } from "./schemas";
 
+// User-confirmed GeoBS product codes have four characters. This derives a
+// candidate from the product segment only, never from a layer name or title.
+// The naming convention is not an upstream-verified STAC relationship.
+export function inferStacDatasetId(collectionId: string): string | undefined {
+  return /^ch\.bs\.(?:[a-z0-9_]+_)?([a-z0-9]{4})(?:\.[a-z0-9_.-]+)?$/i
+    .exec(collectionId)?.[1]?.toUpperCase();
+}
+
 // GeoBS naming conventions, not a formal STAC/OGC API relationship.
 export function findCollectionsForDataset(
   datasetId: string,

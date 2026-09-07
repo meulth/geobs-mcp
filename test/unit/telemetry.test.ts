@@ -49,15 +49,15 @@ describe("privacy-safe telemetry", () => {
     await Promise.all([client.connect(a), server.connect(b)]);
     try {
       await withTelemetry(async () => {
-        await client.callTool({ name: "search_location", arguments: { query: "Basel" } });
+        await client.callTool({ name: "search_api_v2", arguments: { query: "Basel" } });
         fetcher.mockImplementation(async () => new Response("secret", { status: 503 }));
-        await client.callTool({ name: "search_location", arguments: { query: "Basel" } });
-        await client.callTool({ name: "search_location", arguments: {} });
+        await client.callTool({ name: "search_api_v2", arguments: { query: "Basel" } });
+        await client.callTool({ name: "search_api_v2", arguments: {} });
       });
       const tools = log.mock.calls.map(([e]) => e).filter(e => e.event === "mcp_tool");
       expect(tools).toHaveLength(2);
-      expect(tools[0]).toMatchObject({ tool: "search_location", outcome: "success", output_bytes: expect.any(Number) });
-      expect(tools[1]).toMatchObject({ tool: "search_location", outcome: "error", error_code: "UPSTREAM_UNAVAILABLE" });
+      expect(tools[0]).toMatchObject({ tool: "search_api_v2", outcome: "success", output_bytes: expect.any(Number) });
+      expect(tools[1]).toMatchObject({ tool: "search_api_v2", outcome: "error", error_code: "UPSTREAM_UNAVAILABLE" });
       expect(JSON.stringify(log.mock.calls)).not.toContain("secret");
     } finally { await client.close(); await server.close(); }
   });

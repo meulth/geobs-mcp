@@ -14,7 +14,6 @@ export const LIMITS = {
   maxWfsCollectionsBytes: 12_000_000,
   maxToolOutputBytes: 250_000,
   maxSearchResults: 20,
-  maxDatasetResults: 20,
   maxFeatures: 25,
   maxPropertyIds: 10,
   maxPropertyFilters: 5

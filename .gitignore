@@ -4,6 +4,9 @@ dist/
 coverage/
 *.log
 
+# Private deployment notes, infrastructure handoffs and local analysis.
+.private/
+
 # Local secrets. Never commit GEOBS_API_KEY.
 .dev.vars
 .dev.vars.*

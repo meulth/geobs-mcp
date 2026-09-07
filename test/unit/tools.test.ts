@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StacClient } from "../../src/clients/stac";
 import type { OgcFeaturesClient } from "../../src/clients/ogcFeatures";
-import { searchDatasets } from "../../src/tools/searchDatasets";
 import { queryFeatures } from "../../src/tools/queryFeatures";
 import { enforceFeatureOutputLimit } from "../../src/tools/output";
 import { fitsToolOutput, jsonByteLength, successResult } from "../../src/mcp/results";
@@ -10,23 +8,6 @@ import { LIMITS } from "../../src/config";
 const summarize = (output: { numberReturned: number }) => `Returned ${output.numberReturned} features.`;
 
 describe("tool validation and mapping", () => {
-  it("ranks real STAC-shaped metadata without a hardcoded dataset list", async () => {
-    const client = {
-      listCollections: async () => [
-        { id: "TREE", title: "Bäume", description: "Baumkataster", links: [] },
-        {
-          id: "STNA",
-          title: "Strassennamen",
-          description: "Strassen und Plätze",
-          keywords: ["Strasse"],
-          links: []
-        }
-      ]
-    } as unknown as StacClient;
-    const result = await searchDatasets(client, { query: "Strassen", limit: 5 });
-    expect(result.datasets[0]?.id).toBe("STNA");
-  });
-
   it("rejects ambiguous point plus bbox input before upstream calls", async () => {
     const client = { queryFeatures: async () => ({}) } as unknown as OgcFeaturesClient;
     await expect(

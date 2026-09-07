@@ -9,7 +9,7 @@ import { asGeoBsError } from "../errors";
 import { compactText, selectLinks } from "./output";
 
 const getDatasetShape = {
-  id: datasetIdSchema.describe("Exact STAC collection ID returned by search_datasets.")
+  id: datasetIdSchema.describe("Known STAC product ID, or stacDatasetId from search_datasets_ogc (inferred from the OGC naming convention). Do not pass the long OGC layer ID.")
 };
 
 const getDatasetInput = z.object(getDatasetShape);
@@ -121,10 +121,10 @@ function summarize(output: Awaited<ReturnType<typeof getDataset>>): string {
 
 export function registerGetDataset(server: McpServer, stac: StacClient, ogc: OgcFeaturesClient) {
   registerReadOnlyTool(server, {
-    name: "get_dataset",
+    name: "get_dataset_stac",
     title: "Get a GeoBS dataset",
     description:
-      "Get one STAC dataset, its live metadata, download assets, items and dynamically related OGC API Features collection IDs from the weekly catalog. Includes catalog age. Use an exact ID returned by search_datasets.",
+      "Get one STAC dataset, its live metadata, download assets, items and dynamically related OGC API Features collection IDs from the weekly catalog. Includes catalog age. Use a known four-character product ID or stacDatasetId returned by search_datasets_ogc. An inferred ID may return DATASET_NOT_FOUND; products without OGC layers remain accessible by known ID.",
     inputSchema: getDatasetShape,
     outputSchema: getDatasetOutputShape,
     execute: (input) => getDataset(stac, ogc, input),

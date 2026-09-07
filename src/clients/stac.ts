@@ -1,4 +1,4 @@
-import { API_URLS, LIMITS } from "../config";
+import { API_URLS } from "../config";
 import { GeoBsError } from "../errors";
 import { fetchJson, type FetchLike } from "../http";
 import { datasetIdSchema } from "../schemas";
@@ -45,11 +45,6 @@ export interface StacItem {
   links?: StacLink[];
 }
 
-interface CollectionList {
-  collections?: StacCollection[];
-  links?: StacLink[];
-}
-
 interface ItemCollection {
   features?: StacItem[];
   links?: StacLink[];
@@ -65,27 +60,8 @@ function validateId(id: string): string {
   return parsed.data;
 }
 
-function assertCollectionList(value: CollectionList): StacCollection[] {
-  if (!Array.isArray(value.collections)) {
-    throw new GeoBsError(
-      "INVALID_UPSTREAM_RESPONSE",
-      "The STAC collections response is invalid."
-    );
-  }
-  return value.collections;
-}
-
 export class StacClient {
   constructor(private readonly fetcher: FetchLike = fetch) {}
-
-  async listCollections(): Promise<StacCollection[]> {
-    const url = new URL("collections", API_URLS.stac);
-    const response = await fetchJson<CollectionList>(url, {
-      fetcher: this.fetcher,
-      timeoutMs: LIMITS.metadataTimeoutMs
-    });
-    return assertCollectionList(response.data);
-  }
 
   async getCollection(id: string): Promise<StacCollection> {
     id = validateId(id);

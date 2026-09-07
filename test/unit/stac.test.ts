@@ -4,23 +4,19 @@ import { StacClient } from "../../src/clients/stac";
 describe("StacClient", () => {
   it("reads live-shaped collection metadata", async () => {
     const fixture = {
-      collections: [
-        {
-          id: "STNA",
-          title: "Strassennamen",
-          description: "Strassen und Plätze",
-          keywords: ["Strasse"],
-          links: []
-        }
-      ]
+      id: "STNA",
+      title: "Strassennamen",
+      description: "Strassen und Plätze",
+      keywords: ["Strasse"],
+      links: []
     };
     const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json(fixture)
     );
-    const result = await new StacClient(fetcher).listCollections();
-    expect(result).toEqual(fixture.collections);
+    const result = await new StacClient(fetcher).getCollection("STNA");
+    expect(result).toEqual(fixture);
     expect(String(fetcher.mock.calls[0]![0])).toBe(
-      "https://api.geo.bs.ch/stac/v1/collections"
+      "https://api.geo.bs.ch/stac/v1/collections/STNA"
     );
   });
 

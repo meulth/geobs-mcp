@@ -10,7 +10,7 @@ import { fitsToolOutput } from "../mcp/results";
 
 const getPropertyInfoShape = {
   ids: propertyIdsSchema.optional().describe("E-GRID or section/parcel IDs."),
-  point: pointSchema.optional().describe("A point, normally copied from search_location."),
+  point: pointSchema.optional().describe("A point, normally copied from search_api_v2."),
   withGeometry: z.boolean().default(false)
 };
 
@@ -129,7 +129,7 @@ export function registerGetPropertyInfo(server: McpServer, propertyInfo: Propert
     name: "get_property_info",
     title: "Get Basel-Stadt property information",
     description:
-      "Get parcel, building, address and land-cover information from Grundstückinfo. Accepts E-GRID/parcel IDs or a point returned by search_location. Point input dynamically discovers the parcel feature collection and resolves its E-GRID first.",
+      "Get parcel, building, address and land-cover information from Grundstückinfo. Accepts E-GRID/parcel IDs or a point returned by search_api_v2. Point input dynamically discovers the parcel feature collection and resolves its E-GRID first.",
     inputSchema: getPropertyInfoShape,
     outputSchema: getPropertyInfoOutputShape,
     execute: (input) => getPropertyInfo(propertyInfo, ogc, input),

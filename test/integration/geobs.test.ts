@@ -3,7 +3,8 @@ import { StacClient } from "../../src/clients/stac";
 import { SearchClient } from "../../src/clients/search";
 import { OgcFeaturesClient } from "../../src/clients/ogcFeatures";
 import { PropertyInfoClient } from "../../src/clients/propertyInfo";
-import { searchDatasets } from "../../src/tools/searchDatasets";
+import { searchFeatureCollections } from "../../src/tools/searchFeatureCollections";
+import { createCatalogSnapshot } from "../../src/catalog";
 import { getDataset } from "../../src/tools/getDataset";
 import { searchLocation } from "../../src/tools/searchLocation";
 import { queryFeatures } from "../../src/tools/queryFeatures";
@@ -16,10 +17,13 @@ describe("GeoBS live APIs", () => {
   const ogc = new OgcFeaturesClient();
 
   it("discovers datasets about Strassen and loads Strassennamen metadata", async () => {
-    const discovery = await searchDatasets(stac, { query: "Strassen", limit: 10 });
-    expect(discovery.datasets.some((dataset) => dataset.id === "STNA")).toBe(true);
+    // Simulate a populated cache using live metadata; the search itself does no HTTP.
+    const snapshot = await createCatalogSnapshot(await ogc.listCollections());
+    const discovery = await searchFeatureCollections({ get: async () => snapshot }, { query: "Strassennamen", limit: 10 });
+    const id = discovery.collections.find(layer => layer.stacDatasetId === "STNA")?.stacDatasetId;
+    expect(id).toBe("STNA");
 
-    const dataset = await getDataset(stac, ogc, { id: "STNA" });
+    const dataset = await getDataset(stac, ogc, { id });
     expect(dataset.title).toMatch(/Strassennamen/i);
     expect(dataset.items[0]?.assets.some((asset) => asset.key === "geojson")).toBe(true);
     expect(dataset.ogcFeaturesDiscovery.collections.length).toBeGreaterThan(0);

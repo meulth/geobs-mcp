@@ -5,6 +5,7 @@ import type { OgcCollection } from "../clients/ogcFeatures";
 import { GeoBsError } from "../errors";
 import { registerReadOnlyTool } from "../mcp/register";
 import { compactText } from "./output";
+import { inferStacDatasetId } from "../discovery";
 
 const inputShape = {
   query: z.string().trim().min(2).max(300).describe("OGC layer topic, title, description terms or exact collection ID."),
@@ -20,7 +21,10 @@ const outputShape = {
   query: z.string(), searchedCollectionCount: z.number().int(),
   totalMatches: z.number().int(), resultCount: z.number().int(), truncated: z.boolean(),
   catalogFetchedAt: z.string(), catalogAgeSeconds: z.number().int(), catalogStale: z.boolean(),
+  stacDatasetIdSource: z.literal("ogc_id_naming_convention"),
   collections: z.array(z.object({ id: z.string(), title: z.string().optional(),
+    stacDatasetId: z.string().regex(/^[A-Z0-9]{4}$/).optional()
+      .describe("Four-character STAC product ID inferred from the OGC ID; not verified against STAC. Use with get_dataset_stac. Omitted when the naming convention does not match."),
     description: z.string().optional(), matchReasons: z.array(reasonSchema) }))
 };
 
@@ -63,17 +67,19 @@ export async function searchFeatureCollections(catalog: CatalogReader, input: un
       (a.collection.id < b.collection.id ? -1 : a.collection.id > b.collection.id ? 1 : 0));
   const collections = matches.slice(0, parsed.limit).map(({ collection, matchReasons }) => ({
     id: collection.id, title: compactText(collection.title, 300),
+    stacDatasetId: inferStacDatasetId(collection.id),
     description: compactText(collection.description), matchReasons
   }));
   return { query: parsed.query, searchedCollectionCount: snapshot.collectionCount,
     totalMatches: matches.length, resultCount: collections.length,
-    truncated: collections.length < matches.length, ...catalogStatus(snapshot), collections };
+    truncated: collections.length < matches.length, ...catalogStatus(snapshot),
+    stacDatasetIdSource: "ogc_id_naming_convention" as const, collections };
 }
 
 export function registerSearchFeatureCollections(server: McpServer, catalog: CatalogReader) {
   registerReadOnlyTool(server, {
-    name: "search_feature_collections", title: "Search GeoBS feature collections",
-    description: "Find exact OGC layer IDs directly by ID, title and description. All search terms must match. Returns separate layers, match reasons and catalog age. Metadata refreshes weekly on Wednesday; use a returned ID with query_features for live features. Use search_datasets/get_dataset for STAC products and downloads.",
+    name: "search_datasets_ogc", title: "Search GeoBS feature collections",
+    description: "Search the weekly OGC metadata cache by topic, ID, title or description. All search terms must match. Returns separate layers, match reasons, catalog age and inferred four-character stacDatasetId values. Use id with query_features_ogc for live features; use stacDatasetId with get_dataset_stac for STAC metadata and downloads. Product IDs follow the OGC naming convention and are not verified against STAC. Products without OGC layers are not searchable here; a missing result does not prove a STAC product is absent.",
     inputSchema: inputShape, outputSchema: outputShape,
     execute: input => searchFeatureCollections(catalog, input),
     summarize: output => `Found ${output.resultCount} of ${output.totalMatches} matching OGC layer(s); catalog fetched ${output.catalogFetchedAt}${output.catalogStale ? " (stale)" : ""}.`
