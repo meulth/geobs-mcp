@@ -17,7 +17,7 @@ bekannte Grenzen und einen direkt kopierbaren Nutzerprompt.
 
 Am 07.09.2026 mit dem lokalen Code (Stand `c2e306e`), `README.md`,
 `docs/workflow.md` und `docs/api-analysis.md` abgeglichen. Die fünf vorhandenen
-Tools, Grafana-Anbindung und Schema-Korrektur werden nicht erneut vorgeschlagen.
+Tools und Grafana-Anbindung werden nicht erneut vorgeschlagen.
 Für diese Ideenpflege keine Live-Datenquellen abgefragt. Katalogbeobachtungen
 in `api-analysis.md` stammen vom 28.08.2026 und sind kein aktueller
 Verfügbarkeitsnachweis. Alle unten offenen Ideen sind noch nicht begonnen;
@@ -237,6 +237,28 @@ beginnen bewusst mit einer kleinen Machbarkeitsprüfung.
 
 ## Erledigt
 
+### GEO-004: Tool-Schema in ChatGPT und Claude aktualisieren
+
+- **Status:** erledigt am 07.09.2026, diesmal durch tatsächlichen ChatGPT-Refresh
+  in der angemeldeten Browser-Sitzung bestätigt: **„Aktionen aktualisiert.“**
+- **Ursache / Fix:** Die JSON-Schema-Patterns für Feldnamen in `query_features`
+  enthielten Unicode-Klassen `\p{L}` und `\p{N}`. Nach gezieltem Ersetzen ihrer
+  Veröffentlichung durch Längenangaben/Beschreibung akzeptiert ChatGPT die
+  Aktualisierung. Die identische Unicode-Zeichenprüfung bleibt serverseitig
+  als Refinement erhalten. Keine Änderung der erlaubten Feldnamen.
+- **Beleg:** Vorher Fehler reproduziert, nur das veröffentlichte Schema von
+  `query_features` geändert, danach derselbe Refresh erfolgreich. Neue
+  Collection-Suche und numerisches `bbox.items` jetzt in ChatGPT sichtbar.
+  Keine neue Verbindung, neue App-ID oder Änderung der Berechtigungen.
+- **Abnahme:** Typecheck und 99 Tests erfolgreich, direkter Live-Feature-Aufruf
+  erfolgreich; Deployment `e5d9417a-650e-42f7-ae20-56ad34b73f14`.
+- **Einordnung:** Die frühere Bounding-Box-Korrektur `c2e306e` allein reichte
+  nicht für den Refresh. Claudes erfolgreiche Aktualisierung (Nutzerangabe)
+  belegt nur dessen eigene Importkompatibilität. Der interne ChatGPT-Validator
+  ist nicht bekannt. Vorherige `Unknown tool`-Fehler des hier eingebundenen
+  Connectors sind separat zu betrachten; dessen Neuladung wurde nicht mitgetestet.
+- **Details:** [Diagnose und Abnahme](chatgpt-schema-refresh.md).
+
 ### GEO-005: OGC-Layer direkt finden
 
 - **Priorität / Status:** mittel / erledigt am 07.09.2026 nach Nutzerfreigabe
@@ -253,6 +275,10 @@ beginnen bewusst mit einer kleinen Machbarkeitsprüfung.
   Live-MCP liefert alle sechs Tools, 21 AVPZ-Layer (20 ausgegeben, Kürzung gemeldet),
   exakten Grundstücks-Layer und erfolgreiche anschliessende Feature-Abfragen.
   Deployment `4846f583-cf62-43aa-a6c6-b9558201039e`.
+- **Grafana:** `infra-services-vm` bestätigt am 07.09.2026 17:05 UTC die
+  Collector-Erweiterung und 30 Panels / 29 Abfragen. Tool- und Cache-Ereignisse
+  anhand echter Logs geprüft; keine zusätzlichen Mailalarme. Visuelle
+  Browserabnahme nicht durchgeführt. Details in `monitoring.md`.
 - **Grenzen:** Keine semantischen Synonyme, Volltextsuche in Features oder
   garantierte fachliche Eignung. Alter wird angezeigt; über 14 Tage alter Cache
   wird abgelehnt. Fehlgeschlagener Refresh erhält den letzten guten Stand.
@@ -278,16 +304,6 @@ beginnen bewusst mit einer kleinen Machbarkeitsprüfung.
   Typecheck und 43 Tests bestanden. Grafana-Betrieb dokumentiert.
 - **Deployment:** Kein neues Deployment nötig; unveränderter Laufzeitcode
   bereits produktiv als Version `dc0d3abb-9555-4ede-958e-b26d84d9d080`.
-
-### GEO-004: Tool-Schema in ChatGPT und Claude aktualisieren
-
-- **Status:** erledigt am 07.09.2026; Nutzer hat die Funktion beider Clients
-  nach der Korrektur bestätigt (Claude direkt aktualisiert, ChatGPT neu verbunden).
-- **Ergebnis:** Feste Zahlenarrays statt Tupel-`prefixItems` für Bounding Box
-  und Koordinaten. 48 Tests bestanden, veröffentlichte Schemas live geprüft.
-- **Git / Deployment:** Commit `c2e306e` gepusht und Version
-  `b8944468-4ee9-411d-80a0-e9bdfdde5e86` deployed. Dies ersetzt den in GEO-003
-  beschriebenen damaligen Produktionsstand; keine neue offene Refresh-Aufgabe.
 
 ## Vorlage für weitere Ideen
 

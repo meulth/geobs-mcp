@@ -193,6 +193,9 @@ function expectPortableArrays(value: unknown): void {
   }
   const schema = value as Record<string, unknown>;
   expect(schema).not.toHaveProperty("prefixItems");
+  if (typeof schema.pattern === "string") {
+    expect(schema.pattern).not.toMatch(/\\[pP]\{/);
+  }
   if (schema.type === "array") {
     expect(schema.items).toBeTypeOf("object");
     expect(schema.items).not.toBeNull();
@@ -341,8 +344,8 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
         bbox: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 },
         collectionId: { pattern: "^[A-Za-z0-9._-]{1,300}$" },
         limit: { default: 10, minimum: 1, maximum: 25 },
-        properties: { type: "array", maxItems: 30 },
-        filters: { type: "array", maxItems: 5 }
+        properties: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 100 } },
+        filters: { type: "array", maxItems: 5, items: { properties: { property: { type: "string", minLength: 1, maxLength: 100 } } } }
       } });
       expect(inputs.get_property_info).toMatchObject({ properties: {
         ids: { minItems: 1, maxItems: 10, items: { pattern: "^[A-Za-z0-9-]{2,40}$" } }

@@ -183,6 +183,14 @@ array shape across all input and output schemas. These tests do not run
 ChatGPT's private importer; after deploying a schema change, refresh the
 existing connection in ChatGPT to verify that client as well.
 
+The same day, the remaining ChatGPT refresh failure was isolated to Unicode
+property escapes (`\p{L}`, `\p{N}`) in the published field-name patterns of
+`query_features`. Field names now publish length constraints and a description;
+the original Unicode allowlist is enforced server-side by a Zod refinement.
+After this targeted change, the existing connection refreshed successfully in
+ChatGPT and displayed the new `search_feature_collections` tool. See the
+[diagnosis and browser acceptance](docs/chatgpt-schema-refresh.md).
+
 ## Security model
 
 - Requests can reach only the fixed `https://api.geo.bs.ch` origin.

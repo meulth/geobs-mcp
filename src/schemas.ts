@@ -5,7 +5,14 @@ export const datasetIdSchema = z.string().trim().regex(/^[A-Za-z0-9._-]{1,100}$/
 export const collectionIdSchema = z.string().trim().regex(/^[A-Za-z0-9._-]{1,300}$/);
 export const propertyIdSchema = z.string().trim().regex(/^[A-Za-z0-9-]{2,40}$/);
 export const locationQuerySchema = z.string().trim().min(2).max(200);
-export const propertyNameSchema = z.string().trim().regex(/^[\p{L}\p{N} _.-]{1,100}$/u);
+// Unicode property escapes need a compatible regex engine and flags, which
+// JSON Schema's `pattern` cannot carry. Keep that check on the server and
+// publish portable length constraints plus a description for MCP importers.
+export const propertyNameSchema = z.string().trim()
+  .refine(value => /^[\p{L}\p{N} _.-]{1,100}$/u.test(value), {
+    message: "Property names must contain 1–100 letters, numbers, spaces, dots, underscores or hyphens."
+  }).meta({ minLength: 1, maxLength: 100,
+    description: "Field name: letters (including Unicode), numbers, spaces, dots, underscores or hyphens; validated by the server." });
 export const propertyValueSchema = z.union([
   z.string().max(200), z.number().finite(), z.boolean()
 ]);

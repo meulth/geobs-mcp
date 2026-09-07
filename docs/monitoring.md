@@ -238,3 +238,31 @@ im Rahmen des Git-Abschlusses.
   `dc0d3abb-9555-4ede-958e-b26d84d9d080` zu 100 %. Der seit dieser Version
   unveränderte Laufzeitcode wird mit Tests und Dokumentation in Git gesichert;
   für die ergänzte Dokumentation ist kein neues Deployment erforderlich.
+
+## GEO-005: bestätigte Infrastruktur-Abnahme am 07.09.2026
+
+Quelle: Abschlussmeldung der Aufgabe `infra-services-vm`, Abnahme 17:05 UTC.
+Diese Angaben wurden aus der Übergabe übernommen, hier nicht erneut auf VM220 geprüft.
+
+- Collector akzeptiert `search_feature_collections`, `catalog_cache` und
+  `catalog_refresh` mit expliziter Zahlen-/Boolean-/Fehlercodevalidierung.
+  Schema-Version 1; Toolzählung bleibt ausschliesslich `mcp_tool`.
+- Dashboard `geobs-mcp`: 30 Panels / 29 Abfragen. Die 22 bisherigen Panels
+  bleiben erhalten, acht Ergänzungen zeigen Katalogalter, Veraltet-Zustand,
+  Collection-Anzahl, Beobachtungszeit und Refresh-/Cachefehler. Alle sieben
+  neuen LogQL-Abfragen live gültig. API/Abfragen/Daten geprüft; keine visuelle
+  Browserabnahme durch die Infrastruktur-Aufgabe.
+- Echter Smoke-Zeitraum 16:55:50–16:56:10 UTC: drei neue Suchaufrufe,
+  ein `query_features`, ein `get_dataset` = fünf Toolausführungen. Separat:
+  vier Cache-, vier GeoBS- und neun HTTP-Ereignisse. Letzte Cache-Beobachtung
+  16:55:59 UTC: 894 Collections, Alter 261 Sekunden, `stale=false`.
+- Werte sind als letzte Beobachtung gekennzeichnet, nicht als laufend aktueller
+  KV-Zustand. Refresh ohne Ereignis bleibt unbekannt. Erster regulärer Cron
+  am 09.09.2026 noch nicht beobachtet; neun Tests unter Windows und Linux prüfen
+  die Refresh-Erfolgs-/Fehlerformen, ohne synthetische Produktionslogs einzufügen.
+- Regulärer Collector-Lauf 17:05:08 UTC erfolgreich: `incomplete=0`,
+  `rejected=0`, `late_dropped=0`, Timer aktiv. Keine zusätzlichen Mailalarme;
+  47 Regeln und gesamte Policy laut Vorher-/Nachher-Vergleich unverändert.
+- Infrastrukturquellen: `C:/src/homelab/monitoring/geobs-poller/README.md`
+  und `docs/GEO-005.md`; zentrale Übergabe `.agent/MONITORING.md` nachgeführt.
+  Kein Neustart von Worker, Grafana oder Loki für diese Erweiterung.

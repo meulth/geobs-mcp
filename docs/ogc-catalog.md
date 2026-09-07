@@ -157,5 +157,6 @@ Technische Quellen während Analyse/Umsetzung am 07.09.2026 geprüft.
   der neuen Version. Beobachtete Such-Invocations: 37 bzw. 52 ms CPU, Outcome `ok`.
   Worker-Timer messen wegen ihrer Auflösung keine präzise CPU-Zeit;
   für diese KPI die Plattform-Invocation verwenden. Kein separater Suchindex nötig.
-- Collector-/Grafana-Erweiterung gehört zur Aufgabe `infra-services-vm`;
-  Worker-Abnahme allein bestätigt deren Umsetzung noch nicht.
+- Collector-/Grafana-Erweiterung durch `infra-services-vm` am 07.09.2026
+  um 17:05 UTC separat live abgenommen: 30 Panels / 29 Abfragen, neues Tool und
+  beide Cache-Ereignisse erfasst. Details und Grenzen in [monitoring.md](monitoring.md).
