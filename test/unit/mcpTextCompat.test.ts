@@ -177,6 +177,25 @@ function structuredContentFromText(result: CallToolResult): unknown {
   return undefined;
 }
 
+// The schema is valid JSON Schema with prefixItems alone, but tool importers
+// can require an explicit homogeneous items schema. Check what tools/list
+// actually publishes, not just Zod's runtime validation.
+function expectPortableArrays(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach(expectPortableArrays);
+    return;
+  }
+  const schema = value as Record<string, unknown>;
+  expect(schema).not.toHaveProperty("prefixItems");
+  if (schema.type === "array") {
+    expect(schema.items).toBeTypeOf("object");
+    expect(schema.items).not.toBeNull();
+    expect(Array.isArray(schema.items)).toBe(false);
+  }
+  Object.values(schema).forEach(expectPortableArrays);
+}
+
 describe("MCP tool results are readable from `content` alone (client-neutral fix)", () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
@@ -283,6 +302,8 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
         "search_location", "search_datasets", "get_dataset", "query_features", "get_property_info"
       ]);
       for (const tool of tools) {
+        expectPortableArrays(tool.inputSchema);
+        expectPortableArrays(tool.outputSchema);
         expect(tool.inputSchema.type).toBe("object");
         expect(tool.outputSchema?.type).toBe("object");
         expect(tool.annotations).toMatchObject({
@@ -295,6 +316,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
         id: { type: "string", pattern: "^[A-Za-z0-9._-]{1,100}$" }
       } });
       expect(inputs.query_features).toMatchObject({ properties: {
+        bbox: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 },
         collectionId: { pattern: "^[A-Za-z0-9._-]{1,300}$" },
         limit: { default: 10, minimum: 1, maximum: 25 },
         properties: { type: "array", maxItems: 30 },
@@ -303,6 +325,23 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       expect(inputs.get_property_info).toMatchObject({ properties: {
         ids: { minItems: 1, maxItems: 10, items: { pattern: "^[A-Za-z0-9-]{2,40}$" } }
       } });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it.each([
+    [], [0, 0, 1], [0, 0, 1, 1, 2], [0, 0, 1, "1"], [0, 0, 1, null]
+  ])("rejects malformed bbox %j before any upstream call", async (...bbox) => {
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, server } = await connectClient();
+    try {
+      const result = await client.callTool({ name: "query_features", arguments: {
+        collectionId: STNA_COLLECTION_ID, bbox
+      } });
+      expect(result.isError).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       await client.close();
       await server.close();

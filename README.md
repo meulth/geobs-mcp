@@ -164,6 +164,20 @@ After deployment:
 
 For a private or workspace-only test, developer mode is the intended route; public plugin submission is not required. If a future deployment exposes user-specific data or write actions, implement MCP-conformant OAuth 2.1 then—not in this read-only V1.
 
+### Tool-schema refresh compatibility
+
+On 7 September 2026, ChatGPT reported `Invalid MCP tool schema for tool
+'query_features'` while refreshing the connection. The deployed `bbox` schema
+used Zod's tuple representation (`prefixItems` without `items`). It now uses a
+homogeneous numeric array with `items`, `minItems: 4` and `maxItems: 4`.
+The two-value coordinate output uses the same portable representation.
+Runtime checks still reject incorrect lengths and nonnumeric coordinates.
+
+The MCP regression tests inspect the actual `tools/list` response for this
+array shape across all input and output schemas. These tests do not run
+ChatGPT's private importer; after deploying a schema change, refresh the
+existing connection in ChatGPT to verify that client as well.
+
 ## Security model
 
 - Requests can reach only the fixed `https://api.geo.bs.ch` origin.

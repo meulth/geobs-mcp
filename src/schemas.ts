@@ -11,9 +11,10 @@ export const propertyValueSchema = z.union([
 ]);
 export const outputPropertiesSchema = z.array(propertyNameSchema).max(30);
 export const propertyIdsSchema = z.array(propertyIdSchema).min(1).max(LIMITS.maxPropertyIds);
-export const bboxSchema = z.tuple([
-  z.number().finite(), z.number().finite(), z.number().finite(), z.number().finite()
-]);
+// Homogeneous fixed-length arrays publish `items` + min/maxItems. Zod tuples
+// publish `prefixItems`, which some MCP tool importers cannot consume.
+export const bboxSchema = z.array(z.number().finite()).length(4)
+  .describe("Bounding box [minX, minY, maxX, maxY], exactly four finite numbers.");
 
 export const epsgSchema = z.union([
   z.literal(2056),

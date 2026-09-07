@@ -26,7 +26,7 @@ const searchLocationOutputShape = {
       label: z.string(),
       type: z.string(),
       geometry: z.string(),
-      coordinate: z.tuple([z.number(), z.number()]).optional()
+      coordinate: z.array(z.number()).length(2).optional()
     }).catchall(z.json())
   )
 };
