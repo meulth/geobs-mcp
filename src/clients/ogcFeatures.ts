@@ -6,6 +6,7 @@ import {
 } from "../config";
 import { GeoBsError } from "../errors";
 import { fetchJson, type FetchLike } from "../http";
+import { catalogStatus, type CatalogReader } from "../catalog";
 import type { z } from "zod";
 import {
   bboxSchema, collectionIdSchema, outputPropertiesSchema,
@@ -110,9 +111,15 @@ function validateBbox(bbox: number[]): asserts bbox is [number, number, number, 
 }
 
 export class OgcFeaturesClient {
-  constructor(private readonly fetcher: FetchLike = fetch) {}
+  catalogMetadata?: ReturnType<typeof catalogStatus>;
+  constructor(private readonly fetcher: FetchLike = fetch, private readonly catalog?: CatalogReader) {}
 
   async listCollections(): Promise<OgcCollection[]> {
+    if (this.catalog) {
+      const snapshot = await this.catalog.get();
+      this.catalogMetadata = catalogStatus(snapshot);
+      return snapshot.collections;
+    }
     const url = new URL(`${API_URLS.ogcFeatures}/collections`);
     url.searchParams.set("f", "json");
     const response = await fetchJson<CollectionList>(url, {

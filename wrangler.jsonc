@@ -5,6 +5,10 @@
   "compatibility_date": "2026-08-28",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "kv_namespaces": [
+    { "binding": "OGC_CATALOG", "id": "b40e0154b8cc46e097c8f8860034ad52" }
+  ],
+  "triggers": { "crons": ["0 1 * * WED", "0 2 * * WED"] },
   "secrets": {
     "required": ["GEOBS_API_KEY"]
   },

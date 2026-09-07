@@ -92,7 +92,8 @@ export async function getPropertyInfo(
     resolvedFrom = {
       type: "point",
       point: { x: point.x, y: point.y, epsg: point.epsg },
-      collectionId: parcelCollection.id
+      collectionId: parcelCollection.id,
+      ...ogcClient.catalogMetadata
     };
   }
 

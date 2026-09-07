@@ -5,6 +5,7 @@ import type { CallToolResult } from "@modelcontextprotocol/client";
 import { createGeoBsServer } from "../../src/mcp/server";
 import { CRS, LIMITS } from "../../src/config";
 import { jsonByteLength } from "../../src/mcp/results";
+import { createCatalogSnapshot } from "../../src/catalog";
 
 /**
  * Regression coverage for a real MCP-client incompatibility: some clients
@@ -145,7 +146,11 @@ function routeFetch(url: URL): Response | undefined {
 }
 
 async function connectClient() {
-  const server = createGeoBsServer({ GEOBS_API_KEY: "test-key" });
+  const snapshot = await createCatalogSnapshot([
+    { id: STNA_COLLECTION_ID, title: "Strassennamen", crs: [CRS_2056] },
+    { id: PARCEL_COLLECTION_ID, title: "Liegenschaft Basel-Stadt", crs: [CRS_2056] }
+  ]);
+  const server = createGeoBsServer({ GEOBS_API_KEY: "test-key" }, { get: async () => snapshot });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.0" });
   await Promise.all([
@@ -294,12 +299,29 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     }
   });
 
-  it("discovers all five tool schemas and their read-only annotations", async () => {
+  it("search_feature_collections -> query_features reuses exact IDs without fetching the full upstream catalog", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    const { client, server } = await connectClient();
+    try {
+      const search = await client.callTool({ name: "search_feature_collections", arguments: { query: "Strassennamen" } });
+      expect(search.isError).toBeFalsy();
+      expect(structuredContentFromText(search)).toEqual(search.structuredContent);
+      expect(fetchMock).not.toHaveBeenCalled();
+      const id = (search.structuredContent as { collections: Array<{ id: string }> }).collections[0]!.id;
+      expect(id).toBe(STNA_COLLECTION_ID);
+      const features = await client.callTool({ name: "query_features", arguments: { collectionId: id, limit: 1, includeGeometry: false } });
+      expect(features.isError).toBeFalsy();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls.every(([input]) => new URL(String(input)).pathname !== "/ogc/v1/wfs3/collections")).toBe(true);
+    } finally { await client.close(); await server.close(); }
+  });
+
+  it("discovers all six tool schemas and their read-only annotations", async () => {
     const { client, server } = await connectClient();
     try {
       const { tools } = await client.listTools();
       expect(tools.map((tool) => tool.name)).toEqual([
-        "search_location", "search_datasets", "get_dataset", "query_features", "get_property_info"
+        "search_location", "search_datasets", "get_dataset", "query_features", "get_property_info", "search_feature_collections"
       ]);
       for (const tool of tools) {
         expectPortableArrays(tool.inputSchema);
@@ -324,6 +346,10 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       } });
       expect(inputs.get_property_info).toMatchObject({ properties: {
         ids: { minItems: 1, maxItems: 10, items: { pattern: "^[A-Za-z0-9-]{2,40}$" } }
+      } });
+      expect(inputs.search_feature_collections).toMatchObject({ properties: {
+        query: { minLength: 2, maxLength: 300 },
+        limit: { default: 8, minimum: 1, maximum: 20 }
       } });
     } finally {
       await client.close();

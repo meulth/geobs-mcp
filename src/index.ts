@@ -1,7 +1,8 @@
 import { createMcpHandler } from "agents/mcp/server";
 import type { Env } from "./config";
 import { createGeoBsServer } from "./mcp/server";
-import { observeHttp } from "./telemetry";
+import { observeHttp, withTelemetry } from "./telemetry";
+import { isCatalogRefreshTime, KvCatalog } from "./catalog";
 
 function jsonResponse(value: unknown, status = 200): Response {
   return Response.json(value, {
@@ -14,6 +15,10 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 export default {
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    if (!isCatalogRefreshTime(controller.scheduledTime)) return;
+    await withTelemetry(() => new KvCatalog(env.OGC_CATALOG).refresh());
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     return observeHttp(request, async () => {
       const url = new URL(request.url);

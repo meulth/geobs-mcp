@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "catalog:prepare": "esbuild scripts/prepare-catalog.ts --bundle --platform=node --format=esm --outfile=.wrangler/prepare-catalog.mjs && node .wrangler/prepare-catalog.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -26,6 +27,7 @@
     "@cloudflare/workers-types": "latest",
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "^22.20.1",
+    "esbuild": "0.28.2",
     "typescript": "5.9.2",
     "vitest": "4.1.11",
     "wrangler": "4.127.0"

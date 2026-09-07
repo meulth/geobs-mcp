@@ -2,7 +2,7 @@
 
 Open-source MCP server for accessing Basel-Stadt geospatial data via STAC, OGC API Features and GeoBS APIs.
 
-`geobs-mcp` is a stateless, read-only Remote MCP server for Cloudflare Workers. It exposes five focused geo tools instead of a generic HTTP proxy. The first PoC supports the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2 and Grundstückinfo.
+`geobs-mcp` is a read-only Remote MCP server for Cloudflare Workers. It exposes six focused geo tools through a stateless MCP handler, with a shared weekly OGC metadata catalog in Workers KV. It supports the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2 and Grundstückinfo.
 
 ## Status
 
@@ -12,7 +12,8 @@ V1 PoC is locally functional and deployable. It uses:
 - the stable MCP TypeScript SDK v2 via `@modelcontextprotocol/server`
 - Cloudflare's stateless `createMcpHandler`
 - Streamable HTTP at `/mcp`
-- no Durable Objects, database, storage, queue, OAuth or LLM
+- Workers KV for OGC collection metadata, refreshed Wednesday at 03:00 Europe/Zurich
+- no Durable Objects, SQL database, queue, OAuth or LLM
 
 The design follows the current [Cloudflare stateless MCP handler documentation](https://developers.cloudflare.com/agents/model-context-protocol/apis/handler-api/), the [MCP transport specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports), and the official OpenAI guidance for [building](https://developers.openai.com/plugins/build/mcp-server) and [connecting](https://developers.openai.com/plugins/deploy/connect-chatgpt) MCP-backed plugins.
 
@@ -25,6 +26,7 @@ The design follows the current [Cloudflare stateless MCP handler documentation](
 | `get_dataset` | STAC + WFS3 | Return metadata, assets, items and dynamically related feature collections. |
 | `query_features` | OGC API Features | Run bounded bbox or point/radius feature queries with controlled exact filters. |
 | `get_property_info` | WFS3 + Grundstückinfo | Resolve a point to an E-GRID, then return parcel, building and land-cover information. |
+| `search_feature_collections` | Cached WFS3 catalog | Find exact layer IDs by ID, title and description; separate layers, ranked matches, reasons and catalog age. |
 
 All tools advertise read-only, non-destructive, idempotent and closed-world annotations. Their inputs and structured outputs have JSON schemas.
 
@@ -50,9 +52,11 @@ GEOBS_API_KEY="your-key"
 
 `.dev.vars` and `.env` files are ignored by Git. Never put a real key in source, tests, fixtures, the Wrangler configuration or logs.
 
-Start the Worker:
+Prepare the public OGC catalog and seed local KV, then start the Worker:
 
 ```bash
+npm run catalog:prepare
+npx wrangler kv key put ogc-catalog:v1 --binding OGC_CATALOG --path .wrangler/ogc-catalog.json --local
 npm run dev
 ```
 
@@ -96,7 +100,8 @@ The validated V1 scenarios are:
 - load STAC metadata and assets for `STNA` (Strassennamen)
 - query WFS3 near Dufourstrasse 40 in EPSG:2056
 - with a key: resolve the address, dynamically find its parcel/E-GRID and retrieve Grundstückinfo
-- list and call the five tools through the Streamable HTTP MCP endpoint
+- list and call the six tools through the Streamable HTTP MCP endpoint
+- search OGC metadata directly, including multiple layers per product, without a full upstream catalog request
 
 ## Deploy to Cloudflare Workers
 
@@ -148,7 +153,7 @@ npx wrangler rollback
 npx wrangler rollback <VERSION_ID>
 ```
 
-A rollback immediately creates a new active deployment. No storage migration is involved because this Worker has no persistent infrastructure.
+A rollback immediately creates a new active deployment. Keep the KV namespace and last good snapshot. The snapshot format is versioned; check compatibility before rolling back to a future version with a different format. Pre-cache versions ignore the namespace.
 
 ## Connect to ChatGPT
 
@@ -159,7 +164,7 @@ After deployment:
 1. Confirm the public HTTPS `/mcp` URL with MCP Inspector.
 2. In ChatGPT settings, open **Security and login** and enable **Developer mode**. Availability can depend on account and workspace policy.
 3. Open ChatGPT Plugins, add a connection, and enter the complete `https://…workers.dev/mcp` URL.
-4. Review the five discovered tools and start a new conversation with the connection enabled.
+4. Review the six discovered tools and start a new conversation with the connection enabled.
 5. Try: `Gib mir alle verfügbaren Informationen zur Dufourstrasse 40.`
 
 For a private or workspace-only test, developer mode is the intended route; public plugin submission is not required. If a future deployment exposes user-specific data or write actions, implement MCP-conformant OAuth 2.1 then—not in this read-only V1.
@@ -199,6 +204,7 @@ Because the endpoint is anonymous, anyone who knows the deployed URL can invoke 
 ```text
 src/
   clients/          GeoBS HTTP clients and response types
+  catalog.ts        validated KV catalog, refresh and Zurich schedule gate
   tools/            each tool's schemas, registration, orchestration and response mapping
   schemas.ts        shared identifier, coordinate and property validation
   discovery.ts      GeoBS-specific STAC/OGC and parcel discovery heuristics
@@ -230,6 +236,7 @@ GeoBS naming heuristics are kept separate from HTTP access.
 - [End-to-end workflow and V2 outlook](docs/workflow.md)
 - [Grafana monitoring: analysis, event schema and collector contract](docs/monitoring.md)
 - [Project ideas and status for dashboard-guy](docs/ideas.md)
+- [OGC catalog: search, cache and operations](docs/ogc-catalog.md)
 - [GeoBS terms of use](https://geo.bs.ch/agb)
 
 ## License

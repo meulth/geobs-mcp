@@ -11,7 +11,7 @@ import { GeoBsError } from "../errors";
 import { compactText, enforceFeatureOutputLimit } from "./output";
 
 const queryFeaturesShape = {
-  collectionId: collectionIdSchema.describe("Exact OGC collection ID returned by get_dataset."),
+  collectionId: collectionIdSchema.describe("Exact OGC collection ID returned by search_feature_collections or get_dataset."),
   bbox: bboxSchema.optional(),
   point: pointSchema.extend({ radius: z.number().finite().min(0).optional() }).optional().describe("Point query; radius is expressed in units of the point CRS."),
   bboxEpsg: epsgSchema.default(2056),
@@ -100,7 +100,7 @@ export function registerQueryFeatures(server: McpServer, client: OgcFeaturesClie
     name: "query_features",
     title: "Query GeoBS features",
     description:
-      "Run a bounded read-only OGC API Features query against an exact collection ID returned by get_dataset. Supports bbox or point/radius, advertised CRS, selected output properties and at most five exact property filters. Arbitrary URLs and query strings are not accepted.",
+      "Run a bounded live read-only OGC API Features query against an exact collection ID returned by search_feature_collections or get_dataset. Supports bbox or point/radius, advertised CRS, selected output properties and at most five exact property filters. Arbitrary URLs and query strings are not accepted.",
     inputSchema: queryFeaturesShape,
     outputSchema: queryFeaturesOutputShape,
     execute: (input) => queryFeatures(client, input),

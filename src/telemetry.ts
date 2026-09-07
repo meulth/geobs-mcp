@@ -10,6 +10,8 @@ type Event = {
   | { event: "http_request"; route: "mcp" | "health" | "other"; method: string; status: number }
   | { event: "mcp_tool"; tool: string; output_bytes?: number }
   | { event: "geobs_upstream"; upstream: string; status?: number; response_bytes?: number }
+  | { event: "catalog_cache"; catalog_age_seconds?: number; catalog_stale?: boolean; collection_count?: number }
+  | { event: "catalog_refresh"; collection_count?: number; snapshot_bytes?: number; changed?: boolean }
 );
 
 // Only the context carrier is shared. Each request gets its own immutable ID.

@@ -16,8 +16,9 @@ Die Instrumentierung sitzt deshalb an drei bestehenden zentralen Stellen:
 und `http.ts` (GeoBS-Zugriff einschließlich Body-Lesen und JSON-Parsing).
 `telemetry.ts` hält die Korrelation über requestlokales AsyncLocalStorage.
 Neue Tools und bestehende API-Clients erben die Messung automatisch.
-Keine zusätzlichen Laufzeitpakete, Bindings, Datenbanken oder Export-Requests
-im Worker. Ein Fehler des Log-Sinks verändert das MCP-Ergebnis nicht.
+Die Instrumentierung selbst benötigt keine zusätzlichen Laufzeitpakete,
+Datenbanken oder Export-Requests. Für den OGC-Katalog ist seit GEO-005 das
+KV-Binding `OGC_CATALOG` ergänzt. Ein Fehler des Log-Sinks verändert das MCP-Ergebnis nicht.
 
 ```text
 MCP-Client -> Cloudflare Worker -> GeoBS API
@@ -48,9 +49,11 @@ IDs werden vom Server erzeugt, nicht aus Client-Headern übernommen.
 | `http_request` | `route=mcp|health|other`, `method`, `status` | Ein Ereignis, wenn der Handler eine Response liefert oder wirft. Dauer bis zur Response, nicht bis zum Ende eines SSE-Streams. Status >= 400 bzw. ungefangene Ausnahme (500) gilt hier als Fehler. |
 | `mcp_tool` | `tool`, bei Erfolg `output_bytes`, bei Fehler `error_code` | Eine abgeschlossene Ausführung des registrierten Toolcallbacks. Dauer umfasst Ausführung und Aufbereitung des begrenzten MCP-Ergebnisses. Bytes sind die serialisierte MCP-Ergebnisgröße, keine Netzwerk-/SSE-Bytes. |
 | `geobs_upstream` | `upstream`, optional `status`, `response_bytes`, `error_code` | Ein zugelassener GeoBS-Fetchversuch. Dauer umfasst Response-Body und JSON-Parsing. HTTP 200 mit ungültigem JSON oder Body-Timeout ist ein Fehler. Bytes nur vorhanden, wenn der Body vollständig gelesen wurde. |
+| `catalog_cache` | bei Erfolg `catalog_age_seconds`, `catalog_stale`, `collection_count`; bei Fehler `error_code` | Ein KV-Katalogzugriff samt Parsing/Validierung; kein GeoBS-Fetch. |
+| `catalog_refresh` | bei Erfolg `collection_count`, `snapshot_bytes`, `changed`; bei Fehler `error_code` | Ein abgeschlossener planmässiger Refresh. `changed` vergleicht den Inhaltshash; unveränderter Inhalt hat trotzdem eine neue Abrufzeit. |
 
 Tool-Werteliste: `search_location`, `search_datasets`, `get_dataset`,
-`query_features`, `get_property_info`.
+`query_features`, `get_property_info`, `search_feature_collections`.
 Upstream-Werteliste: `search`, `stac`, `ogc_features`, `property_info`, `other`.
 HTTP-Methoden: `GET`, `POST`, `DELETE`, `OPTIONS`, `HEAD`, `PUT`, `PATCH`, `OTHER`.
 Fehlercodes siehe `src/errors.ts`; nur diese feste Werteliste übernehmen.
@@ -127,7 +130,7 @@ Collector-Anforderungen:
    Endlichkeit/nichtnegative Werte prüfen. Keine komplette `source`-Kopie.
    Nur zufällige Event-/Request-UUIDs im JSON, niemals als Loki-Labels.
 4. Feste Labels: `job=geobs-mcp`, `environment=production`,
-   `source=cloudflare-worker`, `event=http_request|mcp_tool|geobs_upstream`.
+   `source=cloudflare-worker`, `event=http_request|mcp_tool|geobs_upstream|catalog_cache|catalog_refresh`.
    `tool`/`upstream`/`outcome` können zusätzlich begrenzte Labels sein.
    Collector-Zustand separat mit `source=cloudflare-exporter`.
 5. Cloudflare-Abfrage-Sampling prüfen (`run.statistics.abr_level`, live 1),
@@ -168,6 +171,17 @@ abnehmen. Fehlerquote ohne Aufrufe ist nicht definiert; `N/A` anzeigen.
 Für erfolgreiche Abrufe ohne passende Fehlerereignisse darf die Fehleranzahl
 kontrolliert auf 0 ergänzt werden. Den Zustand des Collectors daneben anzeigen.
 Keine zusätzlichen Mailalarme beauftragt.
+
+GEO-005 erweitert am 07.09.2026 die Tool-/Event-Wertelisten bei unveränderter
+Schema-Version 1. `infra-services-vm` muss die Collector-Allowlist um das sechste
+Tool, beide Ereignisse und die expliziten Zahlen-/Boolean-Felder ergänzen.
+Bestehende Toolzählungen zählen Cache/Refresh nicht mit. `request_id` korreliert
+beim Cron dessen Refresh und GeoBS-Fetch; es gibt dabei kein HTTP-Ereignis.
+Der ungenutzte UTC-Cron-Slot erzeugt kein eigenes Anwendungsereignis.
+Empfohlene Ergänzungen: Katalogalter/Veraltet-Markierung aus letzten Cache-Lesungen,
+Refresh-Erfolg/-Fehler und Collection-Anzahl. Wegen sieben Tagen Loki-Retention
+kann ein wöchentlicher Refresh aus dem Zeitfenster fallen; fehlende Ereignisse
+sind kein Beweis für einen Fehler oder einen frischen Cache. Keine neuen Mailalarme.
 
 ## Quellen
 

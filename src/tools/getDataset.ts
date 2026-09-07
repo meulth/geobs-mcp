@@ -94,6 +94,7 @@ export async function getDataset(
     links: selectLinks(collection.links),
     items: items.map(mapItem),
     ogcFeaturesDiscovery: {
+      ...ogc.catalogMetadata,
       directLinks: directWfsLinks,
       method:
         related.length > 0
@@ -123,7 +124,7 @@ export function registerGetDataset(server: McpServer, stac: StacClient, ogc: Ogc
     name: "get_dataset",
     title: "Get a GeoBS dataset",
     description:
-      "Get one STAC dataset, its metadata, download assets, items and dynamically related OGC API Features collection IDs. Use an exact ID returned by search_datasets.",
+      "Get one STAC dataset, its live metadata, download assets, items and dynamically related OGC API Features collection IDs from the weekly catalog. Includes catalog age. Use an exact ID returned by search_datasets.",
     inputSchema: getDatasetShape,
     outputSchema: getDatasetOutputShape,
     execute: (input) => getDataset(stac, ogc, input),
