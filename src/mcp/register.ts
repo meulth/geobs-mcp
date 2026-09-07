@@ -1,7 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { errorResult } from "../errors";
-import { successResult } from "./results";
+import { asGeoBsError, errorResult } from "../errors";
+import { jsonByteLength, successResult } from "./results";
+import { elapsed, recordEvent } from "../telemetry";
 
 const READ_ONLY = {
   readOnlyHint: true,
@@ -33,10 +34,16 @@ export function registerReadOnlyTool<
     outputSchema: z.object(tool.outputSchema).catchall(z.json()),
     annotations: READ_ONLY
   }, async (input) => {
+    const start = performance.now();
     try {
       const output = await execute(input);
-      return successResult(summarize(output), output);
+      const result = successResult(summarize(output), output);
+      recordEvent({ event: "mcp_tool", tool: name, outcome: "success",
+        duration_ms: elapsed(start), output_bytes: jsonByteLength(result) });
+      return result;
     } catch (error) {
+      recordEvent({ event: "mcp_tool", tool: name, outcome: "error",
+        duration_ms: elapsed(start), error_code: asGeoBsError(error).code });
       return errorResult(error);
     }
   });

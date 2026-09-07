@@ -1,5 +1,6 @@
 import { GEOBS_ORIGIN, LIMITS } from "./config";
 import { GeoBsError, type GeoBsErrorCode } from "./errors";
+import { elapsed, recordEvent, upstreamName } from "./telemetry";
 
 export type FetchLike = (
   input: RequestInfo | URL,
@@ -112,6 +113,11 @@ export async function fetchJson<T>(
   const parsedUrl = typeof url === "string" ? new URL(url) : url;
   assertAllowedUrl(parsedUrl);
 
+  const start = performance.now();
+  let status: number | undefined;
+  let responseBytes: number | undefined;
+  let failure: GeoBsError | undefined;
+
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -131,11 +137,13 @@ export async function fetchJson<T>(
       redirect: "manual"
     });
 
+    status = response.status;
     if (!response.ok) {
       throw statusError(response.status, options.notFoundCode);
     }
 
     const body = await readBoundedBody(response, options.maxBytes ?? LIMITS.maxJsonBytes);
+    responseBytes = body.byteLength;
 
     try {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(body);
@@ -152,24 +160,30 @@ export async function fetchJson<T>(
       );
     }
   } catch (error) {
-    if (error instanceof GeoBsError) throw error;
-    if (
+    if (error instanceof GeoBsError) {
+      failure = error;
+    } else if (
       controller.signal.aborted ||
       (error instanceof DOMException && error.name === "AbortError")
     ) {
-      throw new GeoBsError(
+      failure = new GeoBsError(
         "TIMEOUT",
         "The GeoBS API request timed out.",
         true
       );
+    } else {
+      failure = new GeoBsError(
+        "UPSTREAM_UNAVAILABLE",
+        "The GeoBS API could not be reached.",
+        true
+      );
     }
-    throw new GeoBsError(
-      "UPSTREAM_UNAVAILABLE",
-      "The GeoBS API could not be reached.",
-      true
-    );
+    throw failure;
   } finally {
     clearTimeout(timeout);
+    recordEvent({ event: "geobs_upstream", upstream: upstreamName(parsedUrl.pathname),
+      status, response_bytes: responseBytes, outcome: failure ? "error" : "success",
+      error_code: failure?.code, duration_ms: elapsed(start) });
   }
 }
 
