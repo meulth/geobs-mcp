@@ -215,6 +215,7 @@ GeoBS naming heuristics are kept separate from HTTP access.
 - [Observed GeoBS APIs and STAC↔WFS3 analysis](docs/api-analysis.md)
 - [End-to-end workflow and V2 outlook](docs/workflow.md)
 - [Grafana monitoring: analysis, event schema and collector contract](docs/monitoring.md)
+- [Project ideas and status for dashboard-guy](docs/ideas.md)
 - [GeoBS terms of use](https://geo.bs.ch/agb)
 
 ## License
