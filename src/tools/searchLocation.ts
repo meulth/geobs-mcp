@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { registerReadOnlyTool } from "../mcp/register";
 import { locationQuerySchema } from "../schemas";
-import { LIMITS } from "../config";
+import { API_URLS, LIMITS } from "../config";
 import { SEARCH_TYPES } from "../clients/search";
 import { GeoBsError } from "../errors";
 import { SearchClient, parsePointWkt } from "../clients/search";
@@ -50,6 +50,9 @@ export async function searchLocation(
     query: parsed.query,
     crs: `EPSG:${parsed.epsg}`,
     resultCount: results.length,
+    source: { url: `${API_URLS.search}/search?${new URLSearchParams({ term: parsed.query, epsg: String(parsed.epsg), outputformat: parsed.outputFormat })}`,
+      retrievedAt: new Date().toISOString(), dataUpdatedAt: null },
+    guidance: "Resolve ambiguous places with the user; do not pick the first candidate silently. Returned address coordinates are not verified entrance points. Copy coordinates and CRS exactly, including in follow-ups.",
     results: results.map((result) => ({
       label: result.label.trim(),
       type: result.layer_name,
@@ -69,7 +72,7 @@ export function registerSearchLocation(server: McpServer, client: SearchClient) 
     name: "search_api_v2",
     title: "Search a Basel-Stadt location",
     description:
-      "Resolve an address, street, place, parcel identifier or other GeoBS search object through GeoBS Search API v2. Returns reusable coordinates and the CRS. For an address workflow, pass the returned point to get_property_info.",
+      "Resolve an address or place through GeoBS Search API v2. Ask which station/place the user means when ambiguous; ask for an address when 'here' is unspecified. Do not silently choose the first of several results. Copy returned coordinates and CRS exactly for property/radius queries and follow-ups. An address point is not a verified entrance. NO_RESULTS means this search found no match, not proof of nonexistence; offer a spelling clarification.",
     inputSchema: searchLocationShape,
     outputSchema: searchLocationOutputShape,
     execute: (input) => searchLocation(client, input),

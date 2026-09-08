@@ -204,6 +204,39 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     fetchMock.mockClear();
   });
 
+  it("circle mode publishes the same distances and incomplete coverage to text-only and structured clients", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/items")) return jsonResponse({
+        numberMatched: 63, numberReturned: 2,
+        features: [
+          { type: "Feature", id: "corner", geometry: { type: "Point", coordinates: [2600300, 1200300] } },
+          { type: "Feature", id: "edge", geometry: { type: "Point", coordinates: [2600180, 1200240] } }
+        ], links: [{ rel: "next", href: "https://example.invalid/never-follow" }]
+      });
+      return jsonResponse({ id: STNA_COLLECTION_ID, crs: [CRS_2056] });
+    }));
+    const { client, server } = await connectClient();
+    try {
+      const result = await client.callTool({ name: "query_features_ogc", arguments: {
+        collectionId: STNA_COLLECTION_ID, spatialMode: "circle",
+        point: { x: 2600000, y: 1200000, epsg: 2056, radius: 300 }
+      } });
+      expect(result.isError).toBeFalsy();
+      expect(structuredContentFromText(result)).toEqual(result.structuredContent);
+      expect(result.structuredContent).toMatchObject({
+        numberReturned: 1, coverage: { complete: false },
+        features: [{ id: "edge", distanceMeters: 300 }]
+      });
+      const listed = await client.listTools();
+      expectPortableArrays(listed);
+      expect(listed.tools).toHaveLength(5);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("search_api_v2: content text alone contains reusable coordinates, matching structuredContent", async () => {
     vi.stubGlobal("fetch", fetchMock);
     const { client, server } = await connectClient();

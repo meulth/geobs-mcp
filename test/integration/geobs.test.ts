@@ -16,6 +16,33 @@ describe("GeoBS live APIs", () => {
   const stac = new StacClient();
   const ogc = new OgcFeaturesClient();
 
+  it("checks circle distances and partial candidate coverage with live point features", async () => {
+    const point = { x: 2611696.334, y: 1267078.092, epsg: 2056 };
+    for (const radius of [300, 1000]) {
+      const result = await queryFeatures(ogc, {
+        collectionId: "ch.bs.basel_info_bifo.oev_haltestelle",
+        spatialMode: "circle", point: { ...point, radius }, limit: 25
+      });
+      expect(result.features.length).toBeGreaterThan(0);
+      let previous = -1;
+      for (const feature of result.features) {
+        const coordinates = feature.geometry?.coordinates as number[];
+        const dx = coordinates[0]! - point.x;
+        const dy = coordinates[1]! - point.y;
+        expect(feature.distanceMeters).toBeCloseTo(Math.sqrt(dx * dx + dy * dy), 7);
+        expect(feature.distanceMeters).toBeGreaterThanOrEqual(previous);
+        expect(feature.distanceMeters).toBeLessThanOrEqual(radius);
+        previous = feature.distanceMeters!;
+      }
+      if (result.coverage.candidatesMatched! > result.coverage.candidatesReceived) {
+        expect(result.coverage.complete).toBe(false);
+        expect(result.coverage.reasons).toContain("upstream_limit");
+      }
+      expect(result.spatial.center).toEqual({ ...point, radius });
+      expect(result.source.url).toContain("crs=");
+    }
+  });
+
   it("discovers datasets about Strassen and loads Strassennamen metadata", async () => {
     // Simulate a populated cache using live metadata; the search itself does no HTTP.
     const snapshot = await createCatalogSnapshot(await ogc.listCollections());

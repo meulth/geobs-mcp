@@ -103,6 +103,13 @@ npx @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8787/mcp --met
 
 ## Tests
 
+`query_features_ogc` keeps its existing name and box-query default. For true point-feature
+radius queries select `spatialMode: "circle"` with EPSG:2056 and an explicit radius of
+0–1000 meters. Distances and sorting are computed on the server; coverage metadata
+identifies partial or unknown candidate sets. There are still five tools and the same
+`/mcp` endpoint. Refresh client tool metadata after upgrading. See the
+[radius and answer contract](docs/workflow.md#radius-and-answer-contract).
+
 ```bash
 npm run check
 npm run test:integration

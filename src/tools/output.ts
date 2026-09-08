@@ -18,6 +18,7 @@ export function selectLinks(
 export function enforceFeatureOutputLimit<T extends {
   numberReturned: number;
   features: Array<Record<string, unknown>>;
+  coverage?: { complete: boolean; reasons: string[] };
 }>(
   value: T,
   summarize: (output: T) => string
@@ -32,7 +33,9 @@ export function enforceFeatureOutputLimit<T extends {
   };
   if (fits(withoutGeometry)) return withoutGeometry;
 
-  const truncated = { ...withoutGeometry, outputTruncated: true };
+  const truncated = { ...withoutGeometry, outputTruncated: true,
+    ...(value.coverage ? { coverage: { ...value.coverage, complete: false,
+      reasons: [...value.coverage.reasons, "output_byte_limit"] } } : {}) };
   while (truncated.features.length > 1 && !fits(truncated)) {
     truncated.features.pop();
     truncated.numberReturned = truncated.features.length;

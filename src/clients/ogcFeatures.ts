@@ -65,6 +65,10 @@ export interface FeatureQueryResult {
   collection: OgcCollection;
   featureCollection: FeatureCollection;
   outputEpsg: SupportedEpsg;
+  evidence?: {
+    url: string; retrievedAt: string; responseCrs: string | null;
+    rawCount: number; locallyTruncated: boolean; hasNext: boolean;
+  };
 }
 
 const reservedParameters = new Set([
@@ -235,7 +239,14 @@ export class OgcFeaturesClient {
         "The OGC feature response is invalid."
       );
     }
+    const evidence = {
+      url: url.href, retrievedAt: new Date().toISOString(),
+      responseCrs: response.headers.get("content-crs"),
+      rawCount: response.data.features.length,
+      locallyTruncated: response.data.features.length > limit,
+      hasNext: (response.data.links ?? []).some(link => link.rel === "next")
+    };
     response.data.features = response.data.features.slice(0, limit);
-    return { collection, featureCollection: response.data, outputEpsg };
+    return { collection, featureCollection: response.data, outputEpsg, evidence };
   }
 }

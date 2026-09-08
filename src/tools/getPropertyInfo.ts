@@ -7,6 +7,7 @@ import { findParcelCollection } from "../discovery";
 import type { PropertyInfoClient } from "../clients/propertyInfo";
 import { GeoBsError } from "../errors";
 import { fitsToolOutput } from "../mcp/results";
+import { API_URLS } from "../config";
 
 const getPropertyInfoShape = {
   ids: propertyIdsSchema.optional().describe("E-GRID or section/parcel IDs."),
@@ -103,6 +104,8 @@ export async function getPropertyInfo(
     requestedIds: ids,
     crs: parsed.withGeometry ? "EPSG:2056" : undefined,
     date: response.Date,
+    source: { url: API_URLS.propertyInfo, retrievedAt: new Date().toISOString(), dataUpdatedAt: null,
+      note: "The response Date is not a verified last update date. Cite the returned per-property links and E-GRID. This is not a complete legal or functional dossier." },
     realEstates: response.RealEstates
   };
   if (!fitsToolOutput(output, summarize(output))) {

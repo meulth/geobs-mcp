@@ -6,6 +6,7 @@ import { GeoBsError } from "../errors";
 import { registerReadOnlyTool } from "../mcp/register";
 import { compactText } from "./output";
 import { inferStacDatasetId } from "../discovery";
+import { API_URLS } from "../config";
 
 const inputShape = {
   query: z.string().trim().min(2).max(300).describe("OGC layer topic, title, description terms or exact collection ID."),
@@ -73,6 +74,9 @@ export async function searchFeatureCollections(catalog: CatalogReader, input: un
   return { query: parsed.query, searchedCollectionCount: snapshot.collectionCount,
     totalMatches: matches.length, resultCount: collections.length,
     truncated: collections.length < matches.length, ...catalogStatus(snapshot),
+    source: { url: `${API_URLS.ogcFeatures}/collections?f=json`, dataUpdatedAt: null },
+    searchScope: "OGC collection metadata only: all terms in ID/title/description, not feature values, measurements or the complete STAC catalogue.",
+    interpretation: "Zero matches mean these terms were not found in this cache. Do not claim data is absent from all GeoBS. Catalog fetch time is not the feature update date. Planning classes are not measurements.",
     stacDatasetIdSource: "ogc_id_naming_convention" as const, collections };
 }
 
