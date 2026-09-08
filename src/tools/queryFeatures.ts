@@ -8,7 +8,7 @@ import {
 } from "../schemas";
 import type { OgcFeaturesClient } from "../clients/ogcFeatures";
 import { GeoBsError } from "../errors";
-import { compactText, enforceFeatureOutputLimit } from "./output";
+import { compactText, enforceFeatureOutputLimit, sourceSummary } from "./output";
 import { candidateCoverage, withinRadius } from "./spatial";
 
 const queryFeaturesShape = {
@@ -96,6 +96,7 @@ export async function queryFeatures(
     ? ["Distances are horizontal air-line meters from the echoed center, not walking distances or times."]
     : ["These are bounding-box candidates, not circle results. Do not label these counts as within a radius."];
   if (!coverage.complete) warnings.push("Candidate coverage is incomplete or unknown; missing features may be closer. No complete or globally nearest list is established.");
+  if (parsed.filters?.length) warnings.push("Coverage applies ONLY to the echoed property filters. Complete filtered subsets do not prove complete unfiltered coverage; other, missing or null property values may exist.");
   if (circle && !result.evidence?.responseCrs) warnings.push("CRS_HEADER_MISSING: EPSG:2056 is advertised and explicitly requested, but the upstream did not confirm it in a response header.");
   const mapped = {
     collection: {
@@ -116,9 +117,11 @@ export async function queryFeatures(
       bboxEpsg, distanceMethod: circle ? "horizontal_euclidean_EPSG2056" : null,
       crsEvidence: result.evidence?.responseCrs ? "response_header" : "requested_and_advertised_header_absent",
       matchesInCandidates, sortedBy: circle ? "distanceMeters_ascending" : null },
+    query: { collectionId: parsed.collectionId, filters: parsed.filters ?? [] },
     coverage: { ...coverage, complete: coverage.complete && reasons.length === 0,
       candidatesComplete: coverage.complete, reasons,
-      scope: circle ? "circle_in_selected_collection" : "bbox_in_selected_collection" },
+      scope: parsed.filters?.length ? "selected_geometry_AND_property_filters_only"
+        : circle ? "circle_in_selected_collection" : "bbox_in_selected_collection" },
     warnings,
     numberMatched: result.featureCollection.numberMatched,
     numberMatchedScope: "upstream_bbox_candidates",
@@ -135,8 +138,10 @@ export async function queryFeatures(
   return enforceFeatureOutputLimit(mapped, summarize);
 }
 
-function summarize(output: { numberReturned: number; collection: { id: string } }): string {
-  return `Returned ${output.numberReturned} bounded feature(s) from ${output.collection.id}.`;
+function summarize(output: { numberReturned: number; collection: { id: string }; source: unknown;
+  spatial: { mode: string }; coverage: { complete: boolean; reasons: string[]; scope: string } }): string {
+  return `Returned ${output.numberReturned} ${output.spatial.mode} feature(s) from ${output.collection.id}. ` +
+    `Complete for this query: ${output.coverage.complete}${output.coverage.reasons.length ? ` (${output.coverage.reasons.join(", ")})` : ""}; scope: ${output.coverage.scope}.` + sourceSummary(output.source);
 }
 
 export function registerQueryFeatures(server: McpServer, client: OgcFeaturesClient) {

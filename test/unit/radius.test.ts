@@ -131,4 +131,14 @@ describe("bounded circle answers", () => {
     expect(result.features[0]).not.toHaveProperty("distanceMeters");
     expect(result.numberMatchedScope).toBe("upstream_bbox_candidates");
   });
+
+  it("scopes completeness to property filters instead of implying completeness of their union", async () => {
+    const { client } = setup([point(1, 0, 0)]);
+    const filters = [{ property: "Typ", value: "Bus" }];
+    const result = await queryFeatures(client, input({ filters }));
+    expect(result.coverage.complete).toBe(true);
+    expect(result.coverage.scope).toBe("selected_geometry_AND_property_filters_only");
+    expect(result.query.filters).toEqual(filters);
+    expect(result.warnings.join(" ")).toContain("do not prove complete unfiltered coverage");
+  });
 });

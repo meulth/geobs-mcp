@@ -8,6 +8,7 @@ import type { PropertyInfoClient } from "../clients/propertyInfo";
 import { GeoBsError } from "../errors";
 import { fitsToolOutput } from "../mcp/results";
 import { API_URLS } from "../config";
+import { sourceSummary } from "./output";
 
 const getPropertyInfoShape = {
   ids: propertyIdsSchema.optional().describe("E-GRID or section/parcel IDs."),
@@ -124,7 +125,7 @@ export async function getPropertyInfo(
 }
 
 function summarize(output: Record<string, unknown>): string {
-  return `Returned information for ${Array.isArray(output.realEstates) ? output.realEstates.length : 0} real estate(s).`;
+  return `Returned information for ${Array.isArray(output.realEstates) ? output.realEstates.length : 0} real estate(s).` + sourceSummary(output.source);
 }
 
 export function registerGetPropertyInfo(server: McpServer, propertyInfo: PropertyInfoClient, ogc: OgcFeaturesClient) {

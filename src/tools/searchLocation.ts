@@ -6,6 +6,7 @@ import { API_URLS, LIMITS } from "../config";
 import { SEARCH_TYPES } from "../clients/search";
 import { GeoBsError } from "../errors";
 import { SearchClient, parsePointWkt } from "../clients/search";
+import { sourceSummary } from "./output";
 
 const searchLocationShape = {
   query: locationQuerySchema.describe("Address, street, place or other location search text."),
@@ -64,7 +65,7 @@ export async function searchLocation(
 }
 
 function summarize(output: Awaited<ReturnType<typeof searchLocation>>): string {
-  return `Found ${output.resultCount} location result(s) in ${output.crs}.`;
+  return `Found ${output.resultCount} location result(s) in ${output.crs}.` + sourceSummary(output.source);
 }
 
 export function registerSearchLocation(server: McpServer, client: SearchClient) {

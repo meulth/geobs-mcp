@@ -468,7 +468,10 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       expect(result.isError).toBeFalsy();
       expect(result.structuredContent).toMatchObject({ numberReturned: 2, numberMatched: 3, outputTruncated: true });
       expect(structuredContentFromText(result)).toEqual(result.structuredContent);
-      expect(textBlocks(result)[0]).toBe(`Returned 2 bounded feature(s) from ${STNA_COLLECTION_ID}.`);
+      expect(textBlocks(result)[0]).toContain(`Returned 2 bbox feature(s) from ${STNA_COLLECTION_ID}.`);
+      expect(textBlocks(result)[0]).toContain("Complete for this query: false (output_byte_limit)");
+      expect(textBlocks(result)[0]).toContain("https://api.geo.bs.ch/");
+      expect(textBlocks(result)[0]).toContain("Feature update date: unknown");
       expect(jsonByteLength(result)).toBeLessThanOrEqual(LIMITS.maxToolOutputBytes);
     } finally {
       await client.close();

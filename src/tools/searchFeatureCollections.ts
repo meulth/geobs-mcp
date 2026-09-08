@@ -4,7 +4,7 @@ import { catalogStatus, type CatalogReader } from "../catalog";
 import type { OgcCollection } from "../clients/ogcFeatures";
 import { GeoBsError } from "../errors";
 import { registerReadOnlyTool } from "../mcp/register";
-import { compactText } from "./output";
+import { compactText, sourceSummary } from "./output";
 import { inferStacDatasetId } from "../discovery";
 import { API_URLS } from "../config";
 
@@ -83,9 +83,9 @@ export async function searchFeatureCollections(catalog: CatalogReader, input: un
 export function registerSearchFeatureCollections(server: McpServer, catalog: CatalogReader) {
   registerReadOnlyTool(server, {
     name: "search_datasets_ogc", title: "Search GeoBS feature collections",
-    description: "Search the weekly OGC metadata cache by topic, ID, title or description. All search terms must match. Returns separate layers, match reasons, catalog age and inferred four-character stacDatasetId values. Use id with query_features_ogc for live features; use stacDatasetId with get_dataset_stac for STAC metadata and downloads. Product IDs follow the OGC naming convention and are not verified against STAC. Products without OGC layers are not searchable here; a missing result does not prove a STAC product is absent.",
+    description: "Before an area comparison, ask the user to agree on radius and measurable criteria for 'greener' or 'better transport'; do not silently substitute zone/stop counts. Search weekly OGC metadata by topic, ID, title or description; all terms must match. Returns separate layers, match reasons, catalog age and inferred four-character stacDatasetId. Use id with query_features_ogc; stacDatasetId with get_dataset_stac for metadata/downloads. Product IDs are inferred, not verified against STAC. Zero matches only describe this metadata search, not absent measurements or all GeoBS data. Cite source and distinguish cache age from unknown feature update date.",
     inputSchema: inputShape, outputSchema: outputShape,
     execute: input => searchFeatureCollections(catalog, input),
-    summarize: output => `Found ${output.resultCount} of ${output.totalMatches} matching OGC layer(s); catalog fetched ${output.catalogFetchedAt}${output.catalogStale ? " (stale)" : ""}.`
+    summarize: output => `Found ${output.resultCount} of ${output.totalMatches} matching OGC layer(s); catalog fetched ${output.catalogFetchedAt}${output.catalogStale ? " (stale)" : ""}. Only OGC metadata searched, not all GeoBS data.` + sourceSummary(output.source)
   });
 }
