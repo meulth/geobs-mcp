@@ -128,6 +128,10 @@ The validated V1 scenarios are:
 
 ## Deploy to Cloudflare Workers
 
+For an optional self-hosted Node.js runtime with a local atomic catalog,
+portable release, health checks and rollback guidance, see
+[Node runtime](docs/node-runtime.md). This does not replace or deploy the Worker.
+
 Authenticate Wrangler without changing unrelated account resources:
 
 ```bash

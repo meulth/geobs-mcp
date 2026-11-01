@@ -11,6 +11,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "build:node": "node scripts/build-node.mjs",
+    "release:node": "node scripts/build-node.mjs --release",
+    "test:node-build": "node scripts/smoke-node.mjs",
     "catalog:prepare": "esbuild scripts/prepare-catalog.ts --bundle --platform=node --format=esm --outfile=.wrangler/prepare-catalog.mjs && node .wrangler/prepare-catalog.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

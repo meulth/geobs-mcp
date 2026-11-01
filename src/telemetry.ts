@@ -15,10 +15,11 @@ type Event = {
 );
 
 // Only the context carrier is shared. Each request gets its own immutable ID.
-const context = new AsyncLocalStorage<{ request_id: string }>();
+export type TelemetrySink = (event: Record<string, unknown>) => void;
+const context = new AsyncLocalStorage<{ request_id: string; sink?: TelemetrySink }>();
 
-export function withTelemetry<T>(callback: () => T): T {
-  return context.run({ request_id: crypto.randomUUID() }, callback);
+export function withTelemetry<T>(callback: () => T, sink?: TelemetrySink): T {
+  return context.run({ request_id: crypto.randomUUID(), sink }, callback);
 }
 
 export function elapsed(start: number): number {
@@ -29,20 +30,22 @@ export function recordEvent(event: Event): void {
   const request = context.getStore();
   if (!request) return;
   try {
-    console.log({
+    const payload = {
       service: "geobs-mcp",
       schema_version: 1,
       event_id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
-      ...request,
+      request_id: request.request_id,
       ...event
-    });
+    };
+    if (request.sink) request.sink(payload);
+    else console.log(payload);
   } catch {
     // Observability must not change the MCP result or service availability.
   }
 }
 
-export async function observeHttp(request: Request, handler: () => Promise<Response>): Promise<Response> {
+export async function observeHttp(request: Request, handler: () => Promise<Response>, sink?: TelemetrySink): Promise<Response> {
   return withTelemetry(async () => {
     const start = performance.now();
     const path = new URL(request.url).pathname;
@@ -58,7 +61,7 @@ export async function observeHttp(request: Request, handler: () => Promise<Respo
       recordEvent({ event: "http_request", route, method, status,
         outcome: status < 400 ? "success" : "error", duration_ms: elapsed(start) });
     }
-  });
+  }, sink);
 }
 
 export function upstreamName(path: string): string {

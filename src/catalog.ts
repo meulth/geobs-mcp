@@ -71,6 +71,21 @@ export async function createCatalogSnapshot(collections: unknown, now = Date.now
     collectionCount: rows.length, collections: rows };
 }
 
+export function parseCatalogSnapshot(raw: string, now = Date.now()): CatalogSnapshot {
+  if (new TextEncoder().encode(raw).length > LIMITS.maxWfsCollectionsBytes) {
+    throw new GeoBsError("RESPONSE_TOO_LARGE", "The cached OGC catalog exceeds its size limit.");
+  }
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch {
+    throw new GeoBsError("INVALID_UPSTREAM_RESPONSE", "The cached OGC catalog is invalid.");
+  }
+  const parsed = snapshotSchema.safeParse(value);
+  if (!parsed.success || Date.parse(parsed.data.fetchedAt) > now + 60_000) {
+    throw new GeoBsError("INVALID_UPSTREAM_RESPONSE", "The cached OGC catalog is invalid.");
+  }
+  return parsed.data;
+}
+
 export class KvCatalog implements CatalogReader {
   constructor(private readonly store: CatalogStore | undefined, private readonly now = Date.now) {}
 
@@ -78,18 +93,7 @@ export class KvCatalog implements CatalogReader {
     if (!this.store) throw new GeoBsError("UPSTREAM_UNAVAILABLE", "The OGC catalog cache is not configured.", true);
     const raw = await this.store.get(CATALOG_KEY, "text");
     if (raw === null) return null;
-    if (new TextEncoder().encode(raw).length > LIMITS.maxWfsCollectionsBytes) {
-      throw new GeoBsError("RESPONSE_TOO_LARGE", "The cached OGC catalog exceeds its size limit.");
-    }
-    let value: unknown;
-    try { value = JSON.parse(raw); } catch {
-      throw new GeoBsError("INVALID_UPSTREAM_RESPONSE", "The cached OGC catalog is invalid.");
-    }
-    const parsed = snapshotSchema.safeParse(value);
-    if (!parsed.success || Date.parse(parsed.data.fetchedAt) > this.now() + 60_000) {
-      throw new GeoBsError("INVALID_UPSTREAM_RESPONSE", "The cached OGC catalog is invalid.");
-    }
-    return parsed.data;
+    return parseCatalogSnapshot(raw, this.now());
   }
 
   async get(): Promise<CatalogSnapshot> {
