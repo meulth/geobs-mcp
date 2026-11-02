@@ -64,6 +64,16 @@ export class FileCatalog extends KvCatalog {
     this.fileStore = store;
   }
 
+  // Pod initialisation reuses an admissible snapshot. Missing/expired catalogs
+  // use the same bounded, locked refresh; corruption/IO errors remain failures.
+  async ensure(fetcher: FetchLike = fetch) {
+    try { return await this.get(); }
+    catch (error) {
+      if (!(error instanceof GeoBsError) || error.code !== "UPSTREAM_UNAVAILABLE") throw error;
+    }
+    return this.refresh(fetcher);
+  }
+
   override async refresh(fetcher: FetchLike = fetch) {
     await mkdir(dirname(this.fileStore.path), { recursive: true });
     const lockPath = `${this.fileStore.path}.refresh.lock`;

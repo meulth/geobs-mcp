@@ -1,0 +1,32 @@
+# Generic example only. Replace the registry, hostname and existing resource
+# names in your deployment repository. Never put a key value here.
+image:
+  repository: registry.example.test/team/geobs-mcp
+  tag: "0.1.0"
+  # Prefer the actual immutable image digest in production:
+  # digest: sha256:<actual-image-digest>
+
+config:
+  allowedHosts:
+    - geo.example.test
+    - localhost:8080
+    - 127.0.0.1:8080
+  allowedOrigins:
+    - https://geo.example.test
+
+persistence:
+  existingClaim: geobs-catalog
+  # The actual claim must support coherent multi-node filesystem access.
+  accessModes: [ReadWriteMany]
+
+apiKey:
+  existingSecret: geobs-api-key
+  key: GEOBS_API_KEY
+
+# Initial population and weekly refresh use the same PVC and image.
+catalog:
+  initialize: true
+refresh:
+  enabled: true
+  schedule: "0 3 * * 3"
+  timeZone: Europe/Zurich

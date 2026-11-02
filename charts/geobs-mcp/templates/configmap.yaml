@@ -1,0 +1,13 @@
+{{- include "geobs-mcp.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "geobs-mcp.configName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "geobs-mcp.labels" . | nindent 4 }}
+data:
+  GEOBS_BIND_ADDRESS: {{ .Values.config.bindAddress | quote }}
+  GEOBS_CATALOG_PATH: {{ include "geobs-mcp.catalogPath" . | quote }}
+  GEOBS_ALLOWED_HOSTS: {{ join "," .Values.config.allowedHosts | quote }}
+  GEOBS_ALLOWED_ORIGINS: {{ join "," .Values.config.allowedOrigins | quote }}

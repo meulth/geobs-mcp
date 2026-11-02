@@ -1,8 +1,11 @@
 # Node.js runtime and portable release
 
-The optional Node adapter retains the same five tool registrations, schemas and
+The Node adapter retains the same five tool registrations, schemas and
 read-only anonymous `/mcp` contract. The existing Worker entry point, KV binding
 and deployment command remain available. No migration occurs when building.
+
+For a production Docker image and Kubernetes integration guidance, see
+[Standalone container](container.md). The native runtime remains available.
 
 ## Build
 
@@ -12,6 +15,8 @@ On a build machine run `npm ci`, `npm run check`, then `npm run build:node`.
 archive and adjacent SHA-256 file under `dist/releases/`. It includes bundled
 JavaScript dependencies, their licenses, source archive, lockfile, this guide,
 `release.json` and per-file checksums. The target needs no npm installation.
+Ordinary `build:node` also works without a Git checkout; its manifest then uses
+`null` for commit and source cleanliness instead of claiming pinned provenance.
 The release does not include Node itself, credentials, catalog data or logs.
 Rebuild using its source archive, exact Node version and lockfile; builds need
 access to the locked dependencies. Archive metadata may differ between builds.
@@ -29,7 +34,9 @@ another OS is not proof of successful execution on the target guest.
 ## Entrypoints and operator configuration
 
 Run as an unprivileged service account; the entrypoints reject UID 0 and a
-different Node version. The listener binds only **127.0.0.1:8080**.
+different Node version. The native listener defaults to **127.0.0.1:8080**;
+set `GEOBS_BIND_ADDRESS` to an explicit numeric IP for other bindings.
+The container image sets it to `0.0.0.0` for Pod/service access.
 
 ```text
 node /opt/geobs-mcp/current/server.mjs
@@ -38,6 +45,7 @@ node /opt/geobs-mcp/current/refresh.mjs
 
 | Setting | Contract |
 | --- | --- |
+| `GEOBS_BIND_ADDRESS` | Numeric IPv4/IPv6 listener; native default `127.0.0.1`, container default `0.0.0.0`. Port 8080; does not relax Host/Origin checks |
 | `GEOBS_CATALOG_PATH` | Absolute path; default `/var/lib/geobs-mcp/catalog/ogc-catalog.v1.json` |
 | `GEOBS_ALLOWED_HOSTS` | Comma-separated exact Host authorities, including non-default ports. Defaults `127.0.0.1:8080,localhost:8080`; explicitly add the public connector Host if preserved |
 | `GEOBS_ALLOWED_ORIGINS` | Comma-separated exact allowed origins. Defaults `http://127.0.0.1:8080,http://localhost:8080`; HTTPS required for non-loopback origins; no wildcard |
@@ -81,6 +89,12 @@ declaring readiness. The refresher needs write permission on the catalog
 directory; the application only needs read permission. Run both services as the
 same unprivileged account because replacement files are private mode 0600;
 the application service can still mount the directory read-only in its sandbox.
+
+For Kubernetes, the [generic Helm chart](../charts/geobs-mcp/README.md) supplies
+the schedule and persistent mounts. Its init container uses
+`node /app/refresh.mjs --ensure`: reuse a valid (including usable stale) snapshot,
+populate a missing or refresh an expired one. Corruption still fails closed.
+Without `--ensure`, the CLI always attempts the normal validated refresh.
 
 The active snapshot is written to a unique same-directory 0600 temporary file,
 synced, renamed and (on Linux) the containing directory synced. Refresh locking

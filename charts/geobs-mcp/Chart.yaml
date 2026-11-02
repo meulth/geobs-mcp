@@ -1,0 +1,10 @@
+apiVersion: v2
+name: geobs-mcp
+description: Read-only GeoBS MCP server with a persistent OGC metadata catalog
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/meulth/geobs-mcp
+sources:
+  - https://github.com/meulth/geobs-mcp

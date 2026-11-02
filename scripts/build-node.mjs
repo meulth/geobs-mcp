@@ -4,18 +4,24 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, copyFile, mkdtemp } from "node:fs/promises";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(root);
 const runtime = (await readFile(".node-version", "utf8")).trim();
 if (process.versions.node !== runtime) throw new Error(`Build with Node.js ${runtime}.`);
-const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
+const git = (...args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const release = process.argv.includes("--release");
-if (release && git("status", "--porcelain", "--untracked-files=all")) throw new Error("Commit the intended sources before creating a pinned release.");
-const commit = git("rev-parse", "HEAD");
+// Ordinary builds also work from an exported source tree / Docker context.
+// Portable pinned releases still require the original clean Git checkout.
+const hasGit = existsSync(join(root, ".git"));
+if (release && !hasGit) throw new Error("A Git checkout is required for a pinned release.");
+const sourceClean = hasGit ? !git("status", "--porcelain", "--untracked-files=all") : null;
+if (release && !sourceClean) throw new Error("Commit the intended sources before creating a pinned release.");
+const commit = hasGit ? git("rev-parse", "HEAD") : null;
 const pkg = JSON.parse(await readFile("package.json", "utf8"));
 const sha = body => createHash("sha256").update(body).digest("hex");
-const id = `geobs-mcp-${pkg.version}-${commit.slice(0, 12)}-linux-x64`;
+const id = `geobs-mcp-${pkg.version}-${commit?.slice(0, 12) ?? "unversioned"}-linux-x64`;
 await mkdir("dist", { recursive: true });
 const target = release ? await mkdtemp(resolve("dist", `${id}-stage-`)) : resolve("dist/node");
 await mkdir(target, { recursive: true });
@@ -60,8 +66,9 @@ if (release) {
 const files = {};
 for (const name of names) files[name] = sha(await readFile(join(target, name)));
 const manifest = {
-  name: pkg.name, version: pkg.version, commit, sourceClean: !git("status", "--porcelain", "--untracked-files=all"),
-  runtime: `node-${runtime}`, os: "Ubuntu 24.04", arch: "amd64", bundledDependencies: true,
+  name: pkg.name, version: pkg.version, commit, sourceClean,
+  runtime: `node-${runtime}`, os: release ? "Ubuntu 24.04" : process.platform,
+  arch: release ? "amd64" : process.arch, bundledDependencies: true,
   entrypoints: { server: "server.mjs", refresh: "refresh.mjs" },
   dependencyLockSha256: files["package-lock.json"], files
 };

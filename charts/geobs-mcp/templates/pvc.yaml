@@ -1,0 +1,27 @@
+{{- if not .Values.persistence.existingClaim }}
+{{- $annotations := deepCopy .Values.persistence.annotations }}
+{{- if .Values.persistence.retain }}
+{{- $_ := set $annotations "helm.sh/resource-policy" "keep" }}
+{{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "geobs-mcp.claimName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "geobs-mcp.labels" . | nindent 4 }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- if ne .Values.persistence.storageClassName nil }}
+  storageClassName: {{ .Values.persistence.storageClassName | quote }}
+  {{- end }}
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | quote }}
+{{- end }}

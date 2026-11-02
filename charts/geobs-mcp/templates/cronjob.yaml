@@ -1,0 +1,53 @@
+{{- if .Values.refresh.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "geobs-mcp.refreshName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "geobs-mcp.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.refresh.schedule | quote }}
+  timeZone: {{ .Values.refresh.timeZone | quote }}
+  concurrencyPolicy: Forbid
+  suspend: {{ .Values.refresh.suspend }}
+  startingDeadlineSeconds: {{ .Values.refresh.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.refresh.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.refresh.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.refresh.activeDeadlineSeconds }}
+      backoffLimit: {{ .Values.refresh.backoffLimit }}
+      template:
+        metadata:
+          {{- with .Values.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          labels:
+            {{- include "geobs-mcp.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: catalog-refresh
+        spec:
+          {{- include "geobs-mcp.podSettings" . | nindent 10 }}
+          restartPolicy: Never
+          containers:
+            - name: catalog-refresh
+              image: {{ include "geobs-mcp.image" . | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["node"]
+              args: ["/app/refresh.mjs"]
+              envFrom:
+                - configMapRef:
+                    name: {{ include "geobs-mcp.configName" . }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+              resources:
+                {{- toYaml .Values.refresh.resources | nindent 16 }}
+              volumeMounts:
+                - name: catalog
+                  mountPath: {{ .Values.catalog.mountPath | quote }}
+          volumes:
+            - name: catalog
+              persistentVolumeClaim:
+                claimName: {{ include "geobs-mcp.claimName" . }}
+{{- end }}

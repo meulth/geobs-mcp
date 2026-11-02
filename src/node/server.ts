@@ -6,7 +6,7 @@ async function main() {
   checkRuntime();
   const config = nodeConfig(process.env);
   const app = createNodeServer({ ...config, apiKey: await readApiKey(process.env), catalog: new FileCatalog(config.catalogPath), log: jsonLog });
-  app.server.listen(APP_PORT, "127.0.0.1", () => jsonLog({ service: "geobs-mcp", event: "server_started", port: APP_PORT }));
+  app.server.listen(APP_PORT, config.bindAddress, () => jsonLog({ service: "geobs-mcp", event: "server_started", port: APP_PORT }));
   app.server.once("error", () => { jsonLog({ service: "geobs-mcp", event: "server_error" }); process.exitCode = 1; });
   let stopping = false;
   const stop = () => {

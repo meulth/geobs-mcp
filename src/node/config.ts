@@ -1,4 +1,5 @@
 import { open } from "node:fs/promises";
+import { isIP } from "node:net";
 import { isAbsolute, join } from "node:path";
 
 export const NODE_VERSION = "24.20.0";
@@ -8,6 +9,8 @@ export const jsonLog = (event: Record<string, unknown>) => console.log(JSON.stri
 
 type ConfigEnvironment = Record<string, string | undefined>;
 export function nodeConfig(env: ConfigEnvironment) {
+  const bindAddress = env.GEOBS_BIND_ADDRESS ?? "127.0.0.1";
+  if (!isIP(bindAddress) || bindAddress.includes("%")) throw new Error("GEOBS_BIND_ADDRESS must be an IPv4 or IPv6 address.");
   const hosts = (env.GEOBS_ALLOWED_HOSTS ?? "127.0.0.1:8080,localhost:8080").split(",").map(s => s.trim().toLowerCase());
   const origins = (env.GEOBS_ALLOWED_ORIGINS ?? "http://127.0.0.1:8080,http://localhost:8080").split(",").map(s => s.trim());
   for (const host of hosts) {
@@ -21,7 +24,7 @@ export function nodeConfig(env: ConfigEnvironment) {
   }
   const catalogPath = env.GEOBS_CATALOG_PATH ?? DEFAULT_CATALOG_PATH;
   if (!isAbsolute(catalogPath)) throw new Error("GEOBS_CATALOG_PATH must be absolute.");
-  return { hosts, origins, catalogPath };
+  return { hosts, origins, catalogPath, bindAddress };
 }
 
 export async function readApiKey(env: ConfigEnvironment): Promise<string | undefined> {

@@ -2,17 +2,22 @@
 
 Open-source MCP server for accessing Basel-Stadt geospatial data via STAC, OGC API Features and GeoBS APIs.
 
-`geobs-mcp` is a read-only Remote MCP server for Cloudflare Workers. It exposes five focused geo tools through a stateless MCP handler, with a shared weekly OGC metadata catalog in Workers KV. It supports the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2 and Grundstückinfo.
+`geobs-mcp` is a read-only Remote MCP server with a standalone Node.js container
+runtime and a retained Cloudflare Workers entry point. It exposes five focused
+geo tools through the existing stateless MCP handler, with a weekly OGC metadata
+catalog stored locally for Node.js or in Workers KV for the Worker. It supports
+the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2 and Grundstückinfo.
 
 ## Status
 
 The server exposes five read-only tools. It uses:
 
-- TypeScript and Cloudflare Workers
+- TypeScript with Node.js or Cloudflare Workers
 - the stable MCP TypeScript SDK v2 via `@modelcontextprotocol/server`
 - Cloudflare's stateless `createMcpHandler`
 - Streamable HTTP at `/mcp`
-- Workers KV for OGC collection metadata, refreshed Wednesday at 03:00 Europe/Zurich
+- a local OGC metadata snapshot for Node.js, or Workers KV for the Worker;
+  refresh Wednesday at 03:00 Europe/Zurich
 - no Durable Objects, SQL database, queue, OAuth or LLM
 
 The design follows the current [Cloudflare stateless MCP handler documentation](https://developers.cloudflare.com/agents/model-context-protocol/apis/handler-api/), the [MCP transport specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports), and the official OpenAI guidance for [building](https://developers.openai.com/plugins/build/mcp-server) and [connecting](https://developers.openai.com/plugins/deploy/connect-chatgpt) MCP-backed plugins.
@@ -47,6 +52,28 @@ remain accessible through `get_dataset_stac` when their ID is known. After deplo
 this change, refresh existing MCP connections to remove the old tool.
 
 ## Quick start
+
+### Standalone container
+
+```bash
+docker build -t geobs-mcp:container-test .
+```
+
+The image pins Node.js to `.node-version`, runs as UID/GID 1000:1000 and listens
+on `0.0.0.0:8080`. Mount a populated persistent catalog directory and, for
+key-dependent tools, a protected API-key file. It requires no Cloudflare runtime
+or services. See [container build, run and function test](docs/container.md)
+for initial catalog population, configuration and Kubernetes probes.
+
+### Kubernetes with Helm
+
+The [generic Helm chart](charts/geobs-mcp/README.md) provides a Deployment,
+Service, persistent file catalog, first-start init container and weekly refresh
+CronJob (Wednesday 03:00 Europe/Zurich). Configure an existing shared PVC and
+API-key Secret or let the chart request a PVC. It can be rendered and validated
+without a cluster and has no AWS or Argo-specific resources.
+
+### Cloudflare development
 
 Requirements: Node.js 20 or newer and a valid GeoBS Search API key.
 
@@ -257,6 +284,8 @@ records, account details and infrastructure handoffs in the Git-ignored
 `.private/` directory; do not force-add it to source control.
 
 - [Observed GeoBS APIs and STAC↔WFS3 analysis](docs/api-analysis.md)
+- [Standalone container and Kubernetes integration](docs/container.md)
+- [Helm installation, storage requirements and configuration](charts/geobs-mcp/README.md)
 - [End-to-end workflow and V2 outlook](docs/workflow.md)
 - [Structured telemetry and collector guidance](docs/monitoring.md)
 - [Project roadmap](docs/ideas.md)

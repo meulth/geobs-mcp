@@ -26,6 +26,40 @@ afterEach(async () => {
 });
 
 describe("local atomic catalog", () => {
+  it("ensures a missing catalog through the existing bounded refresh", async () => {
+    const { path, catalog } = await fixture();
+    await rm(path);
+    const fetcher = vi.fn(async () => Response.json({ collections: rows }));
+    expect((await catalog.ensure(fetcher)).collectionCount).toBe(1);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it.each([0, 8 * DAY, 14 * DAY])("does not refetch an admissible catalog on pod initialisation (%i ms)", async age => {
+    const { snapshot, catalog } = await fixture(age);
+    const fetcher = vi.fn();
+    expect(await catalog.ensure(fetcher)).toEqual(snapshot);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an expired snapshot during initialisation and retains it on fetch failure", async () => {
+    const { path, catalog } = await fixture(14 * DAY + 1);
+    const before = await readFile(path, "utf8");
+    await expect(catalog.ensure(async () => { throw new Error("synthetic offline"); })).rejects.toBeDefined();
+    expect(await readFile(path, "utf8")).toBe(before);
+    const fetcher = vi.fn(async () => Response.json({ collections: rows }));
+    expect((await catalog.ensure(fetcher)).fetchedAt).toBe(new Date(NOW).toISOString());
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("does not conceal corruption by refetching during initialisation", async () => {
+    const { path, snapshot, catalog } = await fixture();
+    snapshot.collections[0]!.title = "Tampered";
+    await writeFile(path, JSON.stringify(snapshot));
+    const fetcher = vi.fn();
+    await expect(catalog.ensure(fetcher)).rejects.toMatchObject({ code: "INVALID_UPSTREAM_RESPONSE" });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("reads a valid snapshot after a restart and preserves its original date", async () => {
     const { path, snapshot } = await fixture();
     expect(await new FileCatalog(path, () => NOW).get()).toEqual(snapshot);

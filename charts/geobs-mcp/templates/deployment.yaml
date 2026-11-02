@@ -1,0 +1,106 @@
+{{- $annotations := deepCopy .Values.podAnnotations }}
+{{- $_ := set $annotations "checksum/config" (include (print $.Template.BasePath "/configmap.yaml") . | sha256sum) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "geobs-mcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "geobs-mcp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if not (has "ReadWriteMany" .Values.persistence.accessModes) }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "geobs-mcp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      annotations:
+        {{- toYaml $annotations | nindent 8 }}
+      labels:
+        {{- include "geobs-mcp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      {{- include "geobs-mcp.podSettings" . | nindent 6 }}
+      {{- if .Values.catalog.initialize }}
+      initContainers:
+        - name: catalog-init
+          image: {{ include "geobs-mcp.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node"]
+          args: ["/app/refresh.mjs", "--ensure"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "geobs-mcp.configName" . }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.refresh.resources | nindent 12 }}
+          volumeMounts:
+            - name: catalog
+              mountPath: {{ .Values.catalog.mountPath | quote }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "geobs-mcp.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node"]
+          args: ["/app/server.mjs"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "geobs-mcp.configName" . }}
+          {{- if .Values.apiKey.existingSecret }}
+          env:
+            - name: GEOBS_API_KEY_FILE
+              value: /run/secrets/geobs/api-key
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ .Values.probes.host | quote }}
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ .Values.probes.host | quote }}
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          volumeMounts:
+            - name: catalog
+              mountPath: {{ .Values.catalog.mountPath | quote }}
+              readOnly: true
+            {{- if .Values.apiKey.existingSecret }}
+            - name: api-key
+              mountPath: /run/secrets/geobs
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: catalog
+          persistentVolumeClaim:
+            claimName: {{ include "geobs-mcp.claimName" . }}
+        {{- if .Values.apiKey.existingSecret }}
+        - name: api-key
+          secret:
+            secretName: {{ .Values.apiKey.existingSecret | quote }}
+            defaultMode: 288 # 0440: readable by root and the pod's fsGroup
+            items:
+              - key: {{ .Values.apiKey.key | quote }}
+                path: api-key
+        {{- end }}

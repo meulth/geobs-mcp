@@ -1,0 +1,27 @@
+# Only build inputs enter the Docker context. In particular, no .git, .private,
+# local secrets, node_modules, catalog snapshots or previously built artifacts.
+**
+!.node-version
+!package.json
+!package-lock.json
+!LICENSE
+!tsconfig.json
+!vitest.config.ts
+!src/
+!src/**
+!test/
+!test/unit/
+!test/unit/**
+!scripts/
+!scripts/build-node.mjs
+!scripts/smoke-node.mjs
+!docs/
+!docs/node-runtime.md
+
+# Also exclude accidentally placed credentials within allowed source folders.
+**/.env*
+**/.dev.vars*
+**/*.pem
+**/*.key
+**/node_modules
+**/.git

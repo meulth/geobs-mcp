@@ -14,6 +14,8 @@
     "build:node": "node scripts/build-node.mjs",
     "release:node": "node scripts/build-node.mjs --release",
     "test:node-build": "node scripts/smoke-node.mjs",
+    "test:container": "node scripts/smoke-container.mjs",
+    "test:helm": "node scripts/test-helm.mjs",
     "catalog:prepare": "esbuild scripts/prepare-catalog.ts --bundle --platform=node --format=esm --outfile=.wrangler/prepare-catalog.mjs && node .wrangler/prepare-catalog.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -33,6 +35,7 @@
     "esbuild": "0.28.2",
     "typescript": "5.9.2",
     "vitest": "4.1.11",
-    "wrangler": "4.127.0"
+    "wrangler": "4.127.0",
+    "yaml": "2.9.1"
   }
 }

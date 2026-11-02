@@ -1,0 +1,114 @@
+# Build/push the repository Dockerfile to your registry first; no pre-published
+# image is assumed. Production GitOps should select an immutable digest.
+image:
+  repository: geobs-mcp
+  tag: "0.1.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+config:
+  bindAddress: "0.0.0.0"
+  allowedHosts:
+    - localhost:8080
+    - 127.0.0.1:8080
+  allowedOrigins:
+    - http://localhost:8080
+    - http://127.0.0.1:8080
+
+catalog:
+  mountPath: /var/lib/geobs-mcp/catalog
+  fileName: ogc-catalog.v1.json
+  # Init container reuses a valid snapshot and creates/refreshes a missing or
+  # expired one. Corrupt snapshots fail closed and require operator review.
+  initialize: true
+
+persistence:
+  existingClaim: ""
+  # null: use the cluster's default StorageClass; "": explicitly no class.
+  # Select a class supporting the requested shared access mode.
+  storageClassName: null
+  accessModes:
+    - ReadWriteMany
+  size: 1Gi
+  retain: true
+  annotations: {}
+  # RWO is only safe with a single app replica AND operator-enforced same-node
+  # scheduling for app/init/CronJob. This flag acknowledges that responsibility.
+  allowSingleNodeAccess: false
+
+apiKey:
+  # Reference only: the chart never creates or stores the key's value.
+  existingSecret: ""
+  key: GEOBS_API_KEY
+
+refresh:
+  enabled: true
+  schedule: "0 3 * * 3"
+  timeZone: Europe/Zurich
+  suspend: false
+  startingDeadlineSeconds: 86400
+  activeDeadlineSeconds: 300
+  backoffLimit: 2
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+probes:
+  # Must also be in config.allowedHosts. This is an HTTP Host header, not the
+  # destination: Kubernetes still connects to the Pod IP.
+  host: localhost:8080
+  liveness:
+    initialDelaySeconds: 5
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Applied to BOTH the Deployment and refresh Job (including image pull secrets,
+# security identity and scheduling). No Kubernetes API access is required.
+serviceAccountName: ""
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+terminationGracePeriodSeconds: 30
