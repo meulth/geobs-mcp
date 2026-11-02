@@ -126,6 +126,7 @@ export function registerGetDataset(server: McpServer, stac: StacClient, ogc: Ogc
     description:
       "Get one STAC dataset, its live metadata, download assets, items and dynamically related OGC API Features collection IDs from the weekly catalog. Includes catalog age. Use a known four-character product ID or stacDatasetId returned by search_datasets_ogc. An inferred ID may return DATASET_NOT_FOUND; products without OGC layers remain accessible by known ID.",
     inputSchema: getDatasetShape,
+    example: { id: "STNA" },
     outputSchema: getDatasetOutputShape,
     execute: (input) => getDataset(stac, ogc, input),
     summarize

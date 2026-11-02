@@ -85,6 +85,7 @@ export function registerSearchFeatureCollections(server: McpServer, catalog: Cat
     name: "search_datasets_ogc", title: "Search GeoBS feature collections",
     description: "Before an area comparison, ask the user to agree on radius and measurable criteria for 'greener' or 'better transport'; do not silently substitute zone/stop counts. Search weekly OGC metadata by topic, ID, title or description; all terms must match. Returns separate layers, match reasons, catalog age and inferred four-character stacDatasetId. Use id with query_features_ogc; stacDatasetId with get_dataset_stac for metadata/downloads. Product IDs are inferred, not verified against STAC. Zero matches only describe this metadata search, not absent measurements or all GeoBS data. Cite source and distinguish cache age from unknown feature update date.",
     inputSchema: inputShape, outputSchema: outputShape,
+    example: { query: "Strassennamen", limit: 3 },
     execute: input => searchFeatureCollections(catalog, input),
     summarize: output => `Found ${output.resultCount} of ${output.totalMatches} matching OGC layer(s); catalog fetched ${output.catalogFetchedAt}${output.catalogStale ? " (stale)" : ""}. Only OGC metadata searched, not all GeoBS data.` + sourceSummary(output.source)
   });

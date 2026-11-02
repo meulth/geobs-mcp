@@ -95,6 +95,7 @@ Container-specific details:
 | `GEOBS_ALLOWED_HOSTS` | Exact HTTP authorities including significant ports. Add the public hostname and keep `localhost:8080` for the probe examples below. No wildcard. |
 | `GEOBS_ALLOWED_ORIGINS` | Exact allowed browser origins, HTTPS outside loopback. Clients without Origin remain supported. |
 | `GEOBS_CATALOG_PATH` | Default `/var/lib/geobs-mcp/catalog/ogc-catalog.v1.json`. Mount its parent directory. |
+| `GEOBS_PUBLIC_BASE_PATH` | Optional versioned gateway prefix, e.g. `/geobs-mcp/v1`; serves Swagger/OpenAPI and a public MCP alias. Internal `/mcp` stays available. |
 | `GEOBS_API_KEY_FILE` | Optional absolute path to a read-only mounted secret file. Needed for Search v2 and Grundstückinfo. |
 
 For a public host, for example, set
@@ -113,6 +114,10 @@ secret-management policy. The server does not read a plaintext `GEOBS_API_KEY`
 environment variable or a `.env` file. The refresh job needs no API key.
 
 ## Kubernetes integration points
+
+The image includes local Swagger UI assets and generated OpenAPI. See the
+[public API guide](public-api.md) for `/docs`, `/openapi.json`, versioned public
+URLs, gateway routing and browser tests. No CDN or additional service is needed.
 
 The [generic Helm chart](../charts/geobs-mcp/README.md) provides a Deployment,
 Service, optional PVC, first-start init container and weekly refresh CronJob.

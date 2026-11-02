@@ -75,6 +75,7 @@ export function registerSearchLocation(server: McpServer, client: SearchClient) 
     description:
       "Resolve an address or place through GeoBS Search API v2. Ask which station/place the user means when ambiguous; ask for an address when 'here' is unspecified. Do not silently choose the first of several results. Copy returned coordinates and CRS exactly for property/radius queries and follow-ups. An address point is not a verified entrance. NO_RESULTS means this search found no match, not proof of nonexistence; offer a spelling clarification.",
     inputSchema: searchLocationShape,
+    example: { query: "Dufourstrasse 40", limit: 3, epsg: 2056 },
     outputSchema: searchLocationOutputShape,
     execute: (input) => searchLocation(client, input),
     summarize

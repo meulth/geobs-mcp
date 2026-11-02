@@ -135,6 +135,7 @@ export function registerGetPropertyInfo(server: McpServer, propertyInfo: Propert
     description:
       "Get parcel, building, address and land-cover information from Grundstückinfo. Accepts E-GRID/parcel IDs or a point returned by search_api_v2. Point input dynamically discovers the parcel feature collection and resolves its E-GRID first.",
     inputSchema: getPropertyInfoShape,
+    example: { point: { x: 2611300, y: 1266600, epsg: 2056 }, withGeometry: false },
     outputSchema: getPropertyInfoOutputShape,
     execute: (input) => getPropertyInfo(propertyInfo, ogc, input),
     summarize

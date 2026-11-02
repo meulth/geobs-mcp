@@ -144,6 +144,16 @@ try {
     console.log(JSON.stringify({live:live.status,ready:ready.status,tools:frames.find(f=>f.result?.tools).result.tools.map(t=>t.name).sort()}));
   `));
   assert.deepEqual(offline, { live: 200, ready: 200, tools: toolNames });
+  const docs = JSON.parse(docker("exec", name, "node", "--input-type=module", "-e", `
+    const spec=await (await fetch('http://127.0.0.1:8080/openapi.json')).json();
+    const assets=[];
+    for(const file of ['swagger-ui-bundle.js','swagger-ui.css','swagger-initializer.js']) {
+      const response=await fetch('http://127.0.0.1:8080/docs/'+file);
+      assets.push(response.status===200 && (await response.text()).length>100);
+    }
+    console.log(JSON.stringify({openapi:spec.openapi,assets}));
+  `));
+  assert.deepEqual(docs, { openapi: "3.1.0", assets: [true, true, true] });
   // Exactly the init-container CLI: an existing valid snapshot needs neither
   // network nor write permission, and must not refresh on every Pod restart.
   docker("exec", name, "node", "/app/refresh.mjs", "--ensure");
@@ -153,7 +163,7 @@ try {
     checks: ["published port / pod listener", "non-root", "read-only filesystem",
       "missing catalog readiness", "valid catalog readiness", "five tools", "modern JSON", "legacy SSE",
       "synthetic catalog search", "Host/Origin rejection", "persistent catalog after restart",
-      "MCP without network", "catalog ensure without network or writes", "SIGTERM exit 0"] }));
+      "MCP without network", "local Swagger/OpenAPI without network", "catalog ensure without network or writes", "SIGTERM exit 0"] }));
 } catch (error) {
   if (created) process.stderr.write(docker("logs", name).slice(-4_000));
   throw error;

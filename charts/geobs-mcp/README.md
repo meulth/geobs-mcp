@@ -144,7 +144,7 @@ unknown top-level options and selected unsafe/inconsistent settings.
 | `image.*`, `imagePullSecrets` | Own registry/tag or immutable digest; pull credentials are existing Secret references. |
 | `replicaCount` | 1; more replicas require suitable shared storage. |
 | `service.*` | ClusterIP, port 80, optional annotations; Pod port stays 8080. |
-| `config.*` | Bind `0.0.0.0`, exact Host/Origin allowlists. IPv6 wildcard `::` is optional. |
+| `config.*` | Bind `0.0.0.0`, exact Host/Origin allowlists, optional `publicBasePath` such as `/geobs-mcp/v1`. IPv6 wildcard `::` is optional. |
 | `catalog.*` | Mounted directory, snapshot basename, initial population enabled. |
 | `persistence.*` | Existing claim or created PVC, class/mode/size, retention and annotations. |
 | `apiKey.*` | Optional existing Secret and entry name; no key value. |
@@ -178,13 +178,18 @@ npm run test:helm
 `test:helm` requires `helm` and `kubeconform` on PATH (or executable paths in
 `HELM`/`KUBECONFORM`). It lints, renders six configurations, checks workload/
 storage/Secret/probe contracts, validates every resource against strict Kubernetes
-1.27 JSON schemas and rejects nine invalid configurations. No `kubectl`, cluster
+1.27 JSON schemas and rejects eleven invalid configurations. No `kubectl`, cluster
 credentials or Kubernetes API is used. Schema downloads use public HTTPS; set
 `KUBECONFORM_SCHEMA_LOCATION` to an appropriate local schema location/template
 for disconnected validation. Tested with Helm 3.19.0 and kubeconform 0.7.0.
 Offline rendering cannot establish storage permissions/semantics, actual CSI
 support, admission policies, registry pulls, DNS, secrets or ingress streaming.
 Verify these during a later platform deployment before accepting the rollout.
+
+The example sets `config.publicBasePath: /geobs-mcp/v1`. Swagger UI, generated
+OpenAPI and the public MCP alias then work under that prefix, with internal
+`/mcp` preserved. See the [gateway/client guide](../../docs/public-api.md) for
+both preserved/stripped routing, local asset paths, Host/Origin and SSE headers.
 
 References: [Helm values schemas](https://helm.sh/docs/topics/charts/#schema-files),
 [PVC access modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes),

@@ -151,6 +151,7 @@ export function registerQueryFeatures(server: McpServer, client: OgcFeaturesClie
     description:
       "Query live features by exact discovered collection ID. For air-line distances of Point features use spatialMode=circle, point with explicit radius in meters, EPSG:2056; server filters and sorts up to 25 candidates and returns distanceMeters. Copy the previous center exactly for follow-ups. Default bbox is ONLY box candidates, including polygon queries. Cite source and unknown dataUpdatedAt; obey coverage.complete, reasons and warnings. Counts alone do not establish greenery, service quality or an area ranking. Clarify place, radius and comparison criteria before querying. Supports selected properties and five exact filters; no arbitrary URLs.",
     inputSchema: queryFeaturesShape,
+    example: { collectionId: "ch.bs.strassennamen_stna", bbox: [2611200, 1266500, 2611400, 1266700], bboxEpsg: 2056, limit: 3 },
     outputSchema: queryFeaturesOutputShape,
     execute: (input) => queryFeatures(client, input),
     summarize
