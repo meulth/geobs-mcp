@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile, copyFile, mkdtemp } from "node:fs/promises"
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(root);
@@ -30,7 +31,15 @@ const outputs = await build({
   outdir: target, outExtension: { ".js": ".mjs" }, bundle: true,
   platform: "node", target: "node24", format: "esm", metafile: true,
   banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
-  legalComments: "eof"
+  legalComments: "eof",
+  plugins: [{
+    name: "local-swagger-assets",
+    setup(plugin) {
+      const resolveModule = createRequire(import.meta.url).resolve;
+      plugin.onResolve({ filter: /^swagger-ui-dist\/.*\?raw$/ }, args => ({ path: resolveModule(args.path.slice(0, -4)) }));
+      plugin.onLoad({ filter: /[\\/]swagger-ui-dist[\\/](swagger-ui-bundle\.js|swagger-ui\.css)$/ }, async args => ({ contents: await readFile(args.path, "utf8"), loader: "text" }));
+    }
+  }]
 });
 
 // Include licenses for every dependency represented in the bundle, including
@@ -47,7 +56,12 @@ for (const input of Object.keys(outputs.metafile.inputs).filter(path => path.inc
           try { license = await readFile(join(dir, name), "utf8"); break; } catch {}
         }
         if (!license) throw new Error(`Missing license text for ${info.name}@${info.version}`);
-        notices.set(`${info.name}@${info.version}`, `${info.name}@${info.version} (${info.license ?? "see license"})\n${license}`);
+        const extraNotices = [];
+        for (const name of ["NOTICE", "NOTICE.txt", ...(info.name === "swagger-ui-dist" ? ["swagger-ui-bundle.js.LICENSE.txt"] : [])]) {
+          try { extraNotices.push(`${name}\n${await readFile(join(dir, name), "utf8")}`); }
+          catch (error) { if (error.code !== "ENOENT") throw error; }
+        }
+        notices.set(`${info.name}@${info.version}`, `${info.name}@${info.version} (${info.license ?? "see license"})\n${license}\n${extraNotices.join("\n\n")}`);
         break;
       }
     } catch (error) { if (!String(error).includes("ENOENT")) throw error; }

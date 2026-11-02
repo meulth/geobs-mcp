@@ -75,7 +75,7 @@ without a cluster and has no AWS or Argo-specific resources.
 
 ### Cloudflare development
 
-Requirements: Node.js 20 or newer and a valid GeoBS Search API key.
+Requirements: the Node.js version pinned in `.node-version` and a valid GeoBS Search API key.
 
 ```bash
 npm install
@@ -111,6 +111,28 @@ The local URLs are normally:
 Opening `/mcp` in a browser is not an MCP test; the endpoint expects protocol requests.
 
 ## Test with MCP Inspector
+
+The Node.js runtime also serves **Swagger UI at `/docs`** and generated
+**OpenAPI 3.1 at `/openapi.json`**. All five tools have JSON-RPC examples and
+Try it out on the existing `/mcp` endpoint; no REST endpoints per tool are added.
+Swagger assets are served locally without a CDN.
+
+For a versioned public API, set `GEOBS_PUBLIC_BASE_PATH=/geobs-mcp/v1`
+(Helm: `config.publicBasePath`). The UI then also appears at `/geobs-mcp/v1`,
+the spec at `/geobs-mcp/v1/openapi.json` and MCP at `/geobs-mcp/v1/mcp`.
+Internal `/mcp` remains available. See [public API and gateway setup](docs/public-api.md)
+for prefix preservation/stripping, Host/Origin configuration, required headers,
+SSE handling and automated documentation tests.
+
+External MCP clients, including a Bebbi Bot integration, connect to the complete
+`https://api.example.test/geobs-mcp/v1/mcp` URL using **Streamable HTTP** and
+anonymous authentication. They negotiate MCP normally; `/docs` and the OpenAPI
+file are not the MCP connection URL. Configure the actual public hostname in
+the server's allowlists and expose HTTPS through your API gateway. The gateway
+must forward the entire prefix including local Swagger assets, preserve MCP
+headers/bodies and stream SSE without buffering. No upstream API key is sent by
+the client. Detailed [client integration instructions](docs/public-api.md#connect-external-mcp-clients)
+and an Inspector command are provided in the guide.
 
 Start the current Inspector web UI:
 

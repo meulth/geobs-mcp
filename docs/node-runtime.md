@@ -47,6 +47,7 @@ node /opt/geobs-mcp/current/refresh.mjs
 | --- | --- |
 | `GEOBS_BIND_ADDRESS` | Numeric IPv4/IPv6 listener; native default `127.0.0.1`, container default `0.0.0.0`. Port 8080; does not relax Host/Origin checks |
 | `GEOBS_CATALOG_PATH` | Absolute path; default `/var/lib/geobs-mcp/catalog/ogc-catalog.v1.json` |
+| `GEOBS_PUBLIC_BASE_PATH` | Optional public path, e.g. `/geobs-mcp/v1`; adds versioned documentation/MCP aliases while preserving internal routes. See [gateway guide](public-api.md). |
 | `GEOBS_ALLOWED_HOSTS` | Comma-separated exact Host authorities, including non-default ports. Defaults `127.0.0.1:8080,localhost:8080`; explicitly add the public connector Host if preserved |
 | `GEOBS_ALLOWED_ORIGINS` | Comma-separated exact allowed origins. Defaults `http://127.0.0.1:8080,http://localhost:8080`; HTTPS required for non-loopback origins; no wildcard |
 | `GEOBS_API_KEY_FILE` | Optional absolute protected credential-file path; takes precedence over systemd credentials |

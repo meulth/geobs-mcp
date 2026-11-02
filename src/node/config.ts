@@ -8,6 +8,13 @@ export const DEFAULT_CATALOG_PATH = "/var/lib/geobs-mcp/catalog/ogc-catalog.v1.j
 export const jsonLog = (event: Record<string, unknown>) => console.log(JSON.stringify(event));
 
 type ConfigEnvironment = Record<string, string | undefined>;
+export function publicBasePath(value = "") {
+  if (value === "/") return "";
+  if (value.length > 200 || !/^(\/[A-Za-z0-9_-]+)*$/.test(value) || /^\/(mcp|docs|health)(\/|$)/.test(value)) {
+    throw new Error("GEOBS_PUBLIC_BASE_PATH must be empty or a path of unreserved segments without a trailing slash.");
+  }
+  return value;
+}
 export function nodeConfig(env: ConfigEnvironment) {
   const bindAddress = env.GEOBS_BIND_ADDRESS ?? "127.0.0.1";
   if (!isIP(bindAddress) || bindAddress.includes("%")) throw new Error("GEOBS_BIND_ADDRESS must be an IPv4 or IPv6 address.");
@@ -24,7 +31,7 @@ export function nodeConfig(env: ConfigEnvironment) {
   }
   const catalogPath = env.GEOBS_CATALOG_PATH ?? DEFAULT_CATALOG_PATH;
   if (!isAbsolute(catalogPath)) throw new Error("GEOBS_CATALOG_PATH must be absolute.");
-  return { hosts, origins, catalogPath, bindAddress };
+  return { hosts, origins, catalogPath, bindAddress, publicBasePath: publicBasePath(env.GEOBS_PUBLIC_BASE_PATH) };
 }
 
 export async function readApiKey(env: ConfigEnvironment): Promise<string | undefined> {

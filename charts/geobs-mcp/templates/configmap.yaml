@@ -8,6 +8,7 @@ metadata:
     {{- include "geobs-mcp.labels" . | nindent 4 }}
 data:
   GEOBS_BIND_ADDRESS: {{ .Values.config.bindAddress | quote }}
+  GEOBS_PUBLIC_BASE_PATH: {{ .Values.config.publicBasePath | quote }}
   GEOBS_CATALOG_PATH: {{ include "geobs-mcp.catalogPath" . | quote }}
   GEOBS_ALLOWED_HOSTS: {{ join "," .Values.config.allowedHosts | quote }}
   GEOBS_ALLOWED_ORIGINS: {{ join "," .Values.config.allowedOrigins | quote }}

@@ -30,6 +30,7 @@
       "type": "object", "additionalProperties": false, "required": ["bindAddress", "allowedHosts", "allowedOrigins"],
       "properties": {
         "bindAddress": {"enum": ["0.0.0.0", "::"]},
+        "publicBasePath": {"type": "string", "maxLength": 200, "pattern": "^(/[A-Za-z0-9_-]+)*$", "not": {"pattern": "^/(mcp|docs|health)(/|$)"}},
         "allowedHosts": {"$ref": "#/definitions/stringList"},
         "allowedOrigins": {"$ref": "#/definitions/stringList"}
       }

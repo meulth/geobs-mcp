@@ -13,12 +13,26 @@ const READ_ONLY = {
 
 type Shape = Record<string, z.ZodType>;
 
+// Documentation observes the very same schemas/metadata registered with MCP.
+// A WeakMap avoids retaining the per-request stateless MCP server instances.
+export interface ToolDocumentation {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: z.ZodObject<Shape>;
+  outputSchema: z.ZodType;
+  example: Record<string, unknown>;
+}
+const documentation = new WeakMap<McpServer, ToolDocumentation[]>();
+export const getToolDocumentation = (server: McpServer): readonly ToolDocumentation[] => documentation.get(server) ?? [];
+
 interface ReadOnlyTool<Input extends Shape, Output extends Record<string, unknown>> {
   name: string;
   title: string;
   description: string;
   inputSchema: Input;
   outputSchema: Shape;
+  example: z.input<z.ZodObject<Input>>;
   execute: (input: z.output<z.ZodObject<Input>>) => Promise<Output>;
   summarize: (output: Output) => string;
 }
@@ -27,11 +41,13 @@ export function registerReadOnlyTool<
   Input extends Shape,
   Output extends Record<string, unknown>
 >(server: McpServer, tool: ReadOnlyTool<Input, Output>) {
-  const { name, execute, summarize, ...metadata } = tool;
+  const { name, execute, summarize, example, ...metadata } = tool;
+  const inputSchema = z.object(tool.inputSchema);
+  const outputSchema = z.object(tool.outputSchema).catchall(z.json());
   server.registerTool(name, {
     ...metadata,
-    inputSchema: z.object(tool.inputSchema),
-    outputSchema: z.object(tool.outputSchema).catchall(z.json()),
+    inputSchema,
+    outputSchema,
     annotations: READ_ONLY
   }, async (input) => {
     const start = performance.now();
@@ -47,4 +63,7 @@ export function registerReadOnlyTool<
       return errorResult(error);
     }
   });
+  const tools = documentation.get(server) ?? [];
+  tools.push({ name, title: tool.title, description: tool.description, inputSchema, outputSchema, example });
+  documentation.set(server, tools);
 }

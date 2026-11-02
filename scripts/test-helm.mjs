@@ -111,6 +111,7 @@ try {
   assert.deepEqual(exampleValues.errors, []);
   const example = await render("documented-example", exampleValues.toJSON());
   sharedContract(example, "geobs-catalog");
+  assert.equal(example.get("ConfigMap").data.GEOBS_PUBLIC_BASE_PATH, "/geobs-mcp/v1");
   assert.equal(example.get("PersistentVolumeClaim"), undefined);
   assert.equal(pod(example.get("Deployment")).volumes.find(volume => volume.name === "api-key").secret.secretName, "geobs-api-key");
 
@@ -175,6 +176,8 @@ try {
   await rejects("empty-image", { image: { repository: "" } }, /repository/);
   await rejects("catalog-path-traversal", { catalog: { mountPath: "/data/../app" } }, /mountPath/);
   await rejects("old-kubernetes", {}, /kubeVersion/, "1.26.0");
+  await rejects("public-prefix-url", { config: { publicBasePath: "https://geo.example.test/geobs-mcp/v1" } }, /publicBasePath/);
+  await rejects("public-prefix-reserved", { config: { publicBasePath: "/mcp/v1" } }, /publicBasePath/);
   console.log(JSON.stringify({ result: "passed", validCases, rejectedCases,
     kubernetesSchema: "1.27.0", clusterAccess: false }));
 } finally {

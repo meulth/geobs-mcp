@@ -6,15 +6,22 @@ import { createMcpHandler } from "agents/mcp/server";
 import type { CatalogReader } from "../catalog";
 import { createGeoBsServer } from "../mcp/server";
 import { observeHttp, type TelemetrySink } from "../telemetry";
+import { getToolDocumentation } from "../mcp/register";
+import { publicBasePath } from "./config";
+import { buildOpenApi } from "./openapi";
+import { documentationResponse } from "./docs";
 
 export const MAX_REQUEST_BYTES = 1_000_000;
-type Options = { hosts: string[]; origins: string[]; apiKey?: string; catalog: CatalogReader; log?: TelemetrySink };
+type Options = { hosts: string[]; origins: string[]; publicBasePath?: string; apiKey?: string; catalog: CatalogReader; log?: TelemetrySink };
 
 function json(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } });
 }
 
 export function createNodeServer(options: Options) {
+  const basePath = publicBasePath(options.publicBasePath);
+  // Metadata only: creating a server registers schemas but executes no tools.
+  const spec = buildOpenApi(getToolDocumentation(createGeoBsServer({}, options.catalog)), basePath);
   const controllers = new Set<AbortController>();
   const server = createServer({ maxHeaderSize: 16_384 }, (incoming, outgoing) => {
     void serve(incoming, outgoing).catch(() => {
@@ -41,6 +48,9 @@ export function createNodeServer(options: Options) {
       if (origin !== undefined && !options.origins.includes(origin)) { outgoing.writeHead(403); outgoing.end(); return; }
       if (!incoming.url?.startsWith("/") || incoming.url.startsWith("//")) { outgoing.writeHead(400); outgoing.end(); return; }
       const url = new URL(incoming.url, `http://${host}`);
+      const path = basePath && (url.pathname === basePath || url.pathname === `${basePath}/`)
+        ? "/docs"
+        : basePath && url.pathname.startsWith(`${basePath}/`) ? url.pathname.slice(basePath.length) : url.pathname;
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) {
         if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
@@ -56,15 +66,24 @@ export function createNodeServer(options: Options) {
         }
       }
       const body = parts.length ? new Uint8Array(Buffer.concat(parts)) : undefined;
-      const request = new Request(url, { method, headers, body, signal: abort.signal });
+      // The existing MCP handler keeps its internal /mcp route. This explicit
+      // configured alias does not trust X-Forwarded-* or a client-supplied prefix.
+      const internalUrl = new URL(url);
+      if (path === "/mcp") internalUrl.pathname = path;
+      const request = new Request(internalUrl, { method, headers, body, signal: abort.signal });
       const response = await observeHttp(request, async () => {
-        if (url.pathname === "/" && method === "GET") return json({ name: "geobs-mcp", version: "0.1.0", status: "ok", mcp: "/mcp", authentication: "none" });
-        if (url.pathname === "/health/live" && method === "GET") return json({ status: "ok" });
-        if (url.pathname === "/health/ready" && method === "GET") {
+        if (method === "GET" || method === "HEAD") {
+          // A stripping gateway forwards the public prefix root as '/'.
+          const docs = path === "/openapi.json" ? json(spec) : documentationResponse(path === "/" && basePath ? "/docs" : path, basePath);
+          if (docs) return method === "HEAD" ? new Response(null, { status: docs.status, headers: docs.headers }) : docs;
+        }
+        if (path === "/" && method === "GET") return json({ name: "geobs-mcp", version: "0.1.0", status: "ok", mcp: "/mcp", authentication: "none", docs: `${basePath}/docs`, openapi: `${basePath}/openapi.json` });
+        if (path === "/health/live" && method === "GET") return json({ status: "ok" });
+        if (path === "/health/ready" && method === "GET") {
           try { await options.catalog.get(); return json({ status: "ok" }); }
           catch { return json({ status: "not_ready" }, 503); }
         }
-        if (url.pathname !== "/mcp") return json({ error: "not_found" }, 404);
+        if (path !== "/mcp") return json({ error: "not_found" }, 404);
         if (method === "OPTIONS") return new Response(null, { status: 204 });
         const handler = createMcpHandler(() => createGeoBsServer({ GEOBS_API_KEY: options.apiKey }, options.catalog), {
           route: "/mcp", legacy: "stateless", responseMode: "auto", corsOptions: false,
