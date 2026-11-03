@@ -100,10 +100,14 @@ Without `--ensure`, the CLI always attempts the normal validated refresh.
 
 The active snapshot is written to a unique same-directory 0600 temporary file,
 synced, renamed and (on Linux) the containing directory synced. Refresh locking
-uses exclusive creation of `<catalog>.refresh.lock`. A lock older than 15
-minutes (far beyond the refresh timeouts and the Job deadline) is treated as
-left behind by a killed process and taken over automatically; a lock is only
-removed by the process that owns it. Failed fetches,
+uses exclusive creation of `<catalog>.refresh.lock`. Existing locks are never
+taken over automatically, regardless of age: a timeout or old modification
+time does not prove that the writer has exited. A crash may leave a lock.
+Before removing that exact leftover lock, stop all refreshers (including
+CronJobs and init containers sharing the volume) and verify that its owner has
+exited. PID values are diagnostic only and may refer to another pod's namespace.
+Resume refreshers only after recovery; do not remove a live writer's lock.
+Failed fetches,
 pagination, unexpected counts and invalid snapshots keep the last good file.
 Readers validate schema and canonical collection hash; never edit the active
 file in place. Corrupt snapshots require operator repair/repopulation, not a

@@ -61,7 +61,7 @@ refresh:
   timeZone: Europe/Zurich
   suspend: false
   startingDeadlineSeconds: 86400
-  # Must stay below the 15-minute stale-lock takeover of the refresh lock.
+  # Bound the refresh Job; a killed writer's leftover lock requires recovery.
   activeDeadlineSeconds: 300
   backoffLimit: 2
   successfulJobsHistoryLimit: 1

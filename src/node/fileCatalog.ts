@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createCatalogSnapshot, KvCatalog, parseCatalogSnapshot, type CatalogStore } from "../catalog";
@@ -7,11 +7,6 @@ import { GeoBsError } from "../errors";
 import type { FetchLike } from "../http";
 
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
-
-// A refresh is bounded by the 25 s metadata timeout and the Kubernetes Job's
-// activeDeadlineSeconds (300 s by default). A lock older than this belongs to a
-// killed process (for example SIGKILL at the deadline) and may be taken over.
-export const REFRESH_LOCK_STALE_MS = 15 * 60_000;
 
 // The active file is never modified in place. Readers keep a whole old or new
 // inode; both the temporary file and rename live in the destination directory.
@@ -104,38 +99,23 @@ export class FileCatalog extends KvCatalog {
 
 async function acquireLock(lockPath: string): Promise<string> {
   const token = randomUUID();
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let lock;
-    try { lock = await open(lockPath, "wx", 0o600); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (attempt === 0 && await removeStaleLock(lockPath)) continue;
-      throw new GeoBsError("UPSTREAM_UNAVAILABLE",
-        "A catalog refresh lock already exists and is not yet stale; another refresh may be active.", true);
-    }
-    try { await lock.writeFile(JSON.stringify({ token, pid: process.pid, createdAt: new Date().toISOString() }), "utf8"); }
-    finally { await lock.close(); }
-    return token;
+  let lock;
+  try { lock = await open(lockPath, "wx", 0o600); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    // Age cannot prove that the owner is dead. Stat followed by rename/unlink
+    // can also remove a replacement lock acquired by a concurrent refresher.
+    // Recovery is administrative, with all writers stopped, including on RWX.
+    throw new GeoBsError("UPSTREAM_UNAVAILABLE",
+      "A catalog refresh lock already exists; stop all refreshers and verify the owner has exited before removing a leftover lock.", true);
   }
-  /* c8 ignore next */
-  throw new GeoBsError("UPSTREAM_UNAVAILABLE", "The catalog refresh lock could not be acquired.", true);
+  try { await lock.writeFile(JSON.stringify({ token, pid: process.pid, createdAt: new Date().toISOString() }), "utf8"); }
+  finally { await lock.close(); }
+  return token;
 }
 
-// Atomically moves a stale lock aside. Only one contender wins the rename;
-// the loser sees ENOENT and simply retries the exclusive create.
-async function removeStaleLock(lockPath: string): Promise<boolean> {
-  let info;
-  try { info = await stat(lockPath); }
-  catch (error) { if (missing(error)) return true; throw error; }
-  if (Date.now() - info.mtimeMs < REFRESH_LOCK_STALE_MS) return false;
-  const aside = `${lockPath}.stale.${randomUUID()}`;
-  try { await rename(lockPath, aside); }
-  catch (error) { if (missing(error)) return true; throw error; }
-  await unlink(aside).catch(error => { if (!missing(error)) throw error; });
-  return true;
-}
-
-// Never delete a lock that another process has taken over in the meantime.
+// Cooperative refreshers never replace an existing lock. The token check also
+// leaves an unexpected foreign lock untouched; it is not a filesystem CAS.
 async function releaseLock(lockPath: string, token: string): Promise<void> {
   let content;
   try { content = await readFile(lockPath, "utf8"); }

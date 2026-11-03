@@ -121,9 +121,13 @@ fourteen days is rejected. Request handling never silently refreshes the file.
 A corrupt snapshot fails closed, including init; inspect/recover it through the
 [existing catalog recovery procedure](../../docs/node-runtime.md#catalog-and-refresh).
 A crashed/killed writer may leave `<catalog-path>.refresh.lock` or a temporary
-file. A lock older than 15 minutes is taken over automatically by the next
-refresh; keep `refresh.activeDeadlineSeconds` well below that. Confirm no writer
-is active before removing an unused temporary file. Never edit an active snapshot in place or falsify its date.
+file. Locks are never taken over automatically based on age. Before removing
+an exact leftover lock, suspend refresh jobs, prevent new init-container
+refreshes and verify that all writers sharing the volume have exited. A PID
+inside a lock belongs to its writer's PID namespace, not necessarily this pod.
+Then remove only the confirmed leftover lock and resume refreshers. Confirm no
+writer is active before removing an unused temporary file. Never edit an active
+snapshot in place or falsify its date.
 For an immediate normal refresh, an operator can create a Job from the CronJob
 (release `geo`, default chart name):
 

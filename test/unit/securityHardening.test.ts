@@ -8,7 +8,7 @@ import { createCatalogSnapshot, KvCatalog, CATALOG_KEY, type CatalogReader, type
 import { OgcFeaturesClient } from "../../src/clients/ogcFeatures";
 import { StacClient } from "../../src/clients/stac";
 import { getDataset } from "../../src/tools/getDataset";
-import { FileCatalog, FileCatalogStore, REFRESH_LOCK_STALE_MS } from "../../src/node/fileCatalog";
+import { FileCatalog, FileCatalogStore } from "../../src/node/fileCatalog";
 import { createNodeServer } from "../../src/node/http";
 import { nodeConfig } from "../../src/node/config";
 
@@ -92,14 +92,52 @@ describe("parsed catalog cache", () => {
 describe("refresh lock", () => {
   const ok = async () => Response.json({ collections: rows });
 
-  it("takes over a lock left behind by a killed refresher", async () => {
+  it("refuses simultaneous refreshes against an old lock without changing it", async () => {
     const { dir, path } = await tempCatalog();
     const lock = `${path}.refresh.lock`;
-    await writeFile(lock, "{}");
-    const old = new Date(Date.now() - REFRESH_LOCK_STALE_MS - 60_000);
+    const owner = JSON.stringify({ token: "existing-owner" });
+    await writeFile(lock, owner);
+    const old = new Date(Date.now() - 24 * 60 * 60_000);
     await utimes(lock, old, old);
-    await new FileCatalog(path, () => NOW).refresh(ok);
-    expect(await readdir(dir)).toEqual(["ogc-catalog.v1.json"]);
+    const fetcher = vi.fn(ok);
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () =>
+      new FileCatalog(path, () => NOW).refresh(fetcher)));
+    for (const result of results) {
+      expect(result.status).toBe("rejected");
+      if (result.status === "rejected") expect(result.reason).toMatchObject({ code: "UPSTREAM_UNAVAILABLE" });
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await readFile(lock, "utf8")).toBe(owner);
+    expect((await readdir(dir)).sort()).toEqual(["ogc-catalog.v1.json", "ogc-catalog.v1.json.refresh.lock"]);
+  });
+
+  it("keeps an aged active writer exclusive and permits a retry after its release", async () => {
+    const { path } = await tempCatalog();
+    const lock = `${path}.refresh.lock`;
+    let started!: () => void;
+    let deliver!: (response: Response) => void;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const pending = new FileCatalog(path, () => NOW).refresh(async () => {
+      started();
+      return new Promise(resolve => { deliver = resolve; });
+    });
+    await ready;
+    try {
+      const owner = await readFile(lock, "utf8");
+      const old = new Date(Date.now() - 24 * 60 * 60_000);
+      await utimes(lock, old, old);
+      const fetcher = vi.fn(ok);
+      const results = await Promise.allSettled(Array.from({ length: 8 }, () =>
+        new FileCatalog(path, () => NOW).refresh(fetcher)));
+      expect(results.every(result => result.status === "rejected")).toBe(true);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(await readFile(lock, "utf8")).toBe(owner);
+    } finally {
+      deliver(Response.json({ collections: rows }));
+      await pending;
+    }
+    await expect(readFile(lock)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(new FileCatalog(path, () => NOW).refresh(ok)).resolves.toMatchObject({ collectionCount: 1 });
   });
 
   it("does not take over a recent lock", async () => {
@@ -110,12 +148,12 @@ describe("refresh lock", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("never removes a lock that another refresher took over meanwhile", async () => {
+  it("leaves an unexpected foreign lock untouched on release", async () => {
     const { path } = await tempCatalog();
     const lock = `${path}.refresh.lock`;
     const foreign = JSON.stringify({ token: "other-process" });
     await new FileCatalog(path, () => NOW).refresh(async () => {
-      await writeFile(lock, foreign); // simulates a takeover during a slow fetch
+      await writeFile(lock, foreign); // external interference, not a supported recovery operation
       return Response.json({ collections: rows });
     });
     expect(await readFile(lock, "utf8")).toBe(foreign);
