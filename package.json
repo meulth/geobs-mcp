@@ -28,21 +28,24 @@
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0",
-    "agents": "0.22.0",
-    "zod": "4.4.3"
+    "@modelcontextprotocol/server": "2.4.0",
+    "agents": "0.32.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0",
-    "@cloudflare/workers-types": "latest",
-    "@modelcontextprotocol/client": "2.0.0",
+    "@cloudflare/workers-types": "5.20261103.1",
+    "@modelcontextprotocol/client": "2.4.0",
     "@playwright/test": "1.64.1",
     "@types/node": "^22.20.1",
     "esbuild": "0.28.2",
     "swagger-ui-dist": "5.34.1",
     "typescript": "5.9.2",
-    "vitest": "4.1.11",
-    "wrangler": "4.127.0",
+    "vitest": "4.1.12",
+    "wrangler": "4.156.2",
     "yaml": "2.9.1"
+  },
+  "overrides": {
+    "fast-uri": "3.1.9"
   }
 }
