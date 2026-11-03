@@ -113,7 +113,8 @@ try {
       pin:readFileSync('/app/.node-version','utf8').trim(),readOnly,
       sourceCommit:manifest.commit,sourceClean:manifest.sourceClean,
       platform:process.platform,manifestPlatform:manifest.os,arch:process.arch,manifestArch:manifest.arch,
-      buildTools:existsSync('/app/node_modules')||existsSync('/app/.git'),key:!!process.env.GEOBS_API_KEY}));
+      buildTools:existsSync('/app/node_modules')||existsSync('/app/.git'),key:!!process.env.GEOBS_API_KEY,
+      packageManagers:['/usr/local/bin/npm','/usr/local/bin/npx','/usr/local/bin/corepack','/usr/local/lib/node_modules'].some(existsSync)}));
   `));
   assert.notEqual(runtime.uid, 0);
   assert.equal(runtime.node, runtime.pin);
@@ -123,6 +124,7 @@ try {
   assert.equal(runtime.manifestPlatform, runtime.platform);
   assert.equal(runtime.manifestArch, runtime.arch);
   assert.equal(runtime.buildTools, false);
+  assert.equal(runtime.packageManagers, false);
   assert.equal(runtime.key, false);
 
   docker("restart", "--time", "10", name);
@@ -161,7 +163,7 @@ try {
   assert.equal(docker("inspect", "--format", "{{.State.ExitCode}}", name), "0");
   console.log(JSON.stringify({ result: "passed", image, node: runtime.node,
     checks: ["published port / pod listener", "non-root", "read-only filesystem",
-      "missing catalog readiness", "valid catalog readiness", "five tools", "modern JSON", "legacy SSE",
+      "no package managers", "missing catalog readiness", "valid catalog readiness", "five tools", "modern JSON", "legacy SSE",
       "synthetic catalog search", "Host/Origin rejection", "persistent catalog after restart",
       "MCP without network", "local Swagger/OpenAPI without network", "catalog ensure without network or writes", "SIGTERM exit 0"] }));
 } catch (error) {

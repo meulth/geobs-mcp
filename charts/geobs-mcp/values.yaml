@@ -25,6 +25,9 @@ config:
   allowedOrigins:
     - http://localhost:8080
     - http://127.0.0.1:8080
+  # Parallel MCP exchanges per pod; further requests get HTTP 503 + Retry-After.
+  # Size it with resources.limits.memory (each exchange buffers up to ~6 MB).
+  maxConcurrentRequests: 32
 
 catalog:
   mountPath: /var/lib/geobs-mcp/catalog
@@ -58,6 +61,7 @@ refresh:
   timeZone: Europe/Zurich
   suspend: false
   startingDeadlineSeconds: 86400
+  # Bound the refresh Job; a killed writer's leftover lock requires recovery.
   activeDeadlineSeconds: 300
   backoffLimit: 2
   successfulJobsHistoryLimit: 1

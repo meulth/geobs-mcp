@@ -94,6 +94,7 @@ Container-specific details:
 | `GEOBS_BIND_ADDRESS` | Numeric IPv4/IPv6 bind address. Image default `0.0.0.0`; native default `127.0.0.1`. Port remains 8080. This does not change allowed Hosts/Origins. |
 | `GEOBS_ALLOWED_HOSTS` | Exact HTTP authorities including significant ports. Add the public hostname and keep `localhost:8080` for the probe examples below. No wildcard. |
 | `GEOBS_ALLOWED_ORIGINS` | Exact allowed browser origins, HTTPS outside loopback. Clients without Origin remain supported. |
+| `GEOBS_MAX_CONCURRENT_REQUESTS` | Maximum parallel `/mcp` exchanges per process (1–9999, default 32). Excess requests receive HTTP 503 with `Retry-After: 1` before their body is read. |
 | `GEOBS_CATALOG_PATH` | Default `/var/lib/geobs-mcp/catalog/ogc-catalog.v1.json`. Mount its parent directory. |
 | `GEOBS_PUBLIC_BASE_PATH` | Optional versioned gateway prefix, e.g. `/geobs-mcp/v1`; serves Swagger/OpenAPI and a public MCP alias. Internal `/mcp` stays available. |
 | `GEOBS_API_KEY_FILE` | Optional absolute path to a read-only mounted secret file. Needed for Search v2 and Grundstückinfo. |

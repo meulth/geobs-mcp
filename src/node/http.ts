@@ -7,12 +7,12 @@ import type { CatalogReader } from "../catalog";
 import { createGeoBsServer } from "../mcp/server";
 import { observeHttp, type TelemetrySink } from "../telemetry";
 import { getToolDocumentation } from "../mcp/register";
-import { publicBasePath } from "./config";
+import { DEFAULT_MAX_CONCURRENT_REQUESTS, publicBasePath } from "./config";
 import { buildOpenApi } from "./openapi";
 import { documentationResponse } from "./docs";
 
 export const MAX_REQUEST_BYTES = 1_000_000;
-type Options = { hosts: string[]; origins: string[]; publicBasePath?: string; apiKey?: string; catalog: CatalogReader; log?: TelemetrySink };
+type Options = { hosts: string[]; origins: string[]; publicBasePath?: string; apiKey?: string; catalog: CatalogReader; log?: TelemetrySink; maxConcurrentRequests?: number };
 
 function json(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } });
@@ -23,6 +23,8 @@ export function createNodeServer(options: Options) {
   // Metadata only: creating a server registers schemas but executes no tools.
   const spec = buildOpenApi(getToolDocumentation(createGeoBsServer({}, options.catalog)), basePath);
   const controllers = new Set<AbortController>();
+  const maxConcurrent = options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS;
+  let activeMcp = 0;
   const server = createServer({ maxHeaderSize: 16_384 }, (incoming, outgoing) => {
     void serve(incoming, outgoing).catch(() => {
       if (!outgoing.headersSent) { outgoing.writeHead(500, { "content-type": "application/json" }); outgoing.end('{"error":"internal_error"}'); }
@@ -39,6 +41,7 @@ export function createNodeServer(options: Options) {
     const disconnected = () => { if (!outgoing.writableFinished) abort.abort(); };
     incoming.once("aborted", disconnected);
     outgoing.once("close", disconnected);
+    let countedMcp = false;
     try {
       const host = incoming.headers.host?.toLowerCase() ?? "";
       // Forwarded headers are deliberately ignored. The connector must preserve
@@ -56,6 +59,16 @@ export function createNodeServer(options: Options) {
         if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
       }
       const method = incoming.method ?? "GET";
+      if (path === "/mcp" && method !== "OPTIONS") {
+        // Checked before the body is buffered, so rejected requests cost nothing.
+        if (activeMcp >= maxConcurrent) {
+          outgoing.writeHead(503, { "retry-after": "1", "cache-control": "no-store", "content-type": "application/json", connection: "close" });
+          outgoing.end('{"error":"overloaded"}');
+          return;
+        }
+        activeMcp++;
+        countedMcp = true;
+      }
       const parts: Buffer[] = [];
       let bytes = 0;
       if (method !== "GET" && method !== "HEAD") {
@@ -109,6 +122,7 @@ export function createNodeServer(options: Options) {
         await pipeline(Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>), outgoing, { signal: abort.signal });
       } else outgoing.end();
     } finally {
+      if (countedMcp) activeMcp--;
       incoming.removeListener("aborted", disconnected);
       outgoing.removeListener("close", disconnected);
       controllers.delete(abort);

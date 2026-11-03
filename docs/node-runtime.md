@@ -50,6 +50,7 @@ node /opt/geobs-mcp/current/refresh.mjs
 | `GEOBS_PUBLIC_BASE_PATH` | Optional public path, e.g. `/geobs-mcp/v1`; adds versioned documentation/MCP aliases while preserving internal routes. See [gateway guide](public-api.md). |
 | `GEOBS_ALLOWED_HOSTS` | Comma-separated exact Host authorities, including non-default ports. Defaults `127.0.0.1:8080,localhost:8080`; explicitly add the public connector Host if preserved |
 | `GEOBS_ALLOWED_ORIGINS` | Comma-separated exact allowed origins. Defaults `http://127.0.0.1:8080,http://localhost:8080`; HTTPS required for non-loopback origins; no wildcard |
+| `GEOBS_MAX_CONCURRENT_REQUESTS` | Maximum parallel `/mcp` exchanges per process (1–9999, default 32). Excess requests receive HTTP 503 with `Retry-After: 1` before their body is read. |
 | `GEOBS_API_KEY_FILE` | Optional absolute protected credential-file path; takes precedence over systemd credentials |
 | `CREDENTIALS_DIRECTORY` | Alternatively systemd `LoadCredential=GEOBS_API_KEY:…` supplies a file named `GEOBS_API_KEY` here |
 
@@ -99,8 +100,14 @@ Without `--ensure`, the CLI always attempts the normal validated refresh.
 
 The active snapshot is written to a unique same-directory 0600 temporary file,
 synced, renamed and (on Linux) the containing directory synced. Refresh locking
-uses exclusive creation of `<catalog>.refresh.lock`. A crash may leave a lock;
-confirm no refresher is active before removing that exact lock. Failed fetches,
+uses exclusive creation of `<catalog>.refresh.lock`. Existing locks are never
+taken over automatically, regardless of age: a timeout or old modification
+time does not prove that the writer has exited. A crash may leave a lock.
+Before removing that exact leftover lock, stop all refreshers (including
+CronJobs and init containers sharing the volume) and verify that its owner has
+exited. PID values are diagnostic only and may refer to another pod's namespace.
+Resume refreshers only after recovery; do not remove a live writer's lock.
+Failed fetches,
 pagination, unexpected counts and invalid snapshots keep the last good file.
 Readers validate schema and canonical collection hash; never edit the active
 file in place. Corrupt snapshots require operator repair/repopulation, not a

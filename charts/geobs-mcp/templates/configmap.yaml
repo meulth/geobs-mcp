@@ -12,3 +12,4 @@ data:
   GEOBS_CATALOG_PATH: {{ include "geobs-mcp.catalogPath" . | quote }}
   GEOBS_ALLOWED_HOSTS: {{ join "," .Values.config.allowedHosts | quote }}
   GEOBS_ALLOWED_ORIGINS: {{ join "," .Values.config.allowedOrigins | quote }}
+  GEOBS_MAX_CONCURRENT_REQUESTS: {{ .Values.config.maxConcurrentRequests | quote }}

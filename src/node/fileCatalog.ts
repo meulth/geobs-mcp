@@ -1,4 +1,4 @@
-import { mkdir, open, rename, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createCatalogSnapshot, KvCatalog, parseCatalogSnapshot, type CatalogStore } from "../catalog";
@@ -12,6 +12,11 @@ const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "E
 // inode; both the temporary file and rename live in the destination directory.
 export class FileCatalogStore implements CatalogStore {
   readonly path: string;
+  // Reading, parsing and re-hashing up to 12 MB on every tool call and every
+  // readiness probe is an unauthenticated CPU/memory amplifier. A verified file
+  // is reused while its identity is unchanged. Replacements always use rename
+  // (new inode), so a refresh is picked up on the next read.
+  private verified?: { identity: string; raw: string };
   constructor(path: string, private readonly now = Date.now) { this.path = resolve(path); }
 
   async get(): Promise<string | null> {
@@ -19,6 +24,12 @@ export class FileCatalogStore implements CatalogStore {
     try { file = await open(this.path, "r"); }
     catch (error) { if (missing(error)) return null; throw error; }
     try {
+      const info = await file.stat();
+      const identity = `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+      if (this.verified?.identity === identity) return this.verified.raw;
+      this.verified = undefined;
+      if (info.size > LIMITS.maxWfsCollectionsBytes) throw new GeoBsError(
+        "RESPONSE_TOO_LARGE", "The cached OGC catalog exceeds its size limit.");
       const chunks: Buffer[] = [];
       let length = 0;
       for await (const chunk of file.createReadStream({ autoClose: false })) {
@@ -32,6 +43,8 @@ export class FileCatalogStore implements CatalogStore {
       const verified = await createCatalogSnapshot(snapshot.collections, Date.parse(snapshot.fetchedAt));
       if (verified.contentHash !== snapshot.contentHash) throw new GeoBsError(
         "INVALID_UPSTREAM_RESPONSE", "The cached OGC catalog checksum is invalid.");
+      // Returning the same string instance lets KvCatalog reuse its parsed snapshot.
+      this.verified = { identity, raw };
       return raw;
     } finally { await file.close(); }
   }
@@ -46,6 +59,7 @@ export class FileCatalogStore implements CatalogStore {
       try { await file.writeFile(value, "utf8"); await file.sync(); }
       finally { await file.close(); }
       await rename(temporary, this.path);
+      this.verified = undefined;
       if (process.platform !== "win32") {
         const directory = await open(dirname(this.path), "r");
         try { await directory.sync(); } finally { await directory.close(); }
@@ -77,14 +91,36 @@ export class FileCatalog extends KvCatalog {
   override async refresh(fetcher: FetchLike = fetch) {
     await mkdir(dirname(this.fileStore.path), { recursive: true });
     const lockPath = `${this.fileStore.path}.refresh.lock`;
-    let lock;
-    try { lock = await open(lockPath, "wx", 0o600); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new GeoBsError(
-        "UPSTREAM_UNAVAILABLE", "A catalog refresh lock already exists; review the active job before removing a stale lock.", true);
-      throw error;
-    }
+    const token = await acquireLock(lockPath);
     try { return await super.refresh(fetcher); }
-    finally { await lock.close(); await unlink(lockPath); }
+    finally { await releaseLock(lockPath, token); }
   }
+}
+
+async function acquireLock(lockPath: string): Promise<string> {
+  const token = randomUUID();
+  let lock;
+  try { lock = await open(lockPath, "wx", 0o600); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    // Age cannot prove that the owner is dead. Stat followed by rename/unlink
+    // can also remove a replacement lock acquired by a concurrent refresher.
+    // Recovery is administrative, with all writers stopped, including on RWX.
+    throw new GeoBsError("UPSTREAM_UNAVAILABLE",
+      "A catalog refresh lock already exists; stop all refreshers and verify the owner has exited before removing a leftover lock.", true);
+  }
+  try { await lock.writeFile(JSON.stringify({ token, pid: process.pid, createdAt: new Date().toISOString() }), "utf8"); }
+  finally { await lock.close(); }
+  return token;
+}
+
+// Cooperative refreshers never replace an existing lock. The token check also
+// leaves an unexpected foreign lock untouched; it is not a filesystem CAS.
+async function releaseLock(lockPath: string, token: string): Promise<void> {
+  let content;
+  try { content = await readFile(lockPath, "utf8"); }
+  catch (error) { if (missing(error)) return; throw error; }
+  let owner: unknown;
+  try { owner = (JSON.parse(content) as { token?: unknown }).token; } catch { return; }
+  if (owner === token) await unlink(lockPath).catch(error => { if (!missing(error)) throw error; });
 }
