@@ -50,6 +50,7 @@ node /opt/geobs-mcp/current/refresh.mjs
 | `GEOBS_PUBLIC_BASE_PATH` | Optional public path, e.g. `/geobs-mcp/v1`; adds versioned documentation/MCP aliases while preserving internal routes. See [gateway guide](public-api.md). |
 | `GEOBS_ALLOWED_HOSTS` | Comma-separated exact Host authorities, including non-default ports. Defaults `127.0.0.1:8080,localhost:8080`; explicitly add the public connector Host if preserved |
 | `GEOBS_ALLOWED_ORIGINS` | Comma-separated exact allowed origins. Defaults `http://127.0.0.1:8080,http://localhost:8080`; HTTPS required for non-loopback origins; no wildcard |
+| `GEOBS_MAX_CONCURRENT_REQUESTS` | Maximum parallel `/mcp` exchanges per process (1–9999, default 32). Excess requests receive HTTP 503 with `Retry-After: 1` before their body is read. |
 | `GEOBS_API_KEY_FILE` | Optional absolute protected credential-file path; takes precedence over systemd credentials |
 | `CREDENTIALS_DIRECTORY` | Alternatively systemd `LoadCredential=GEOBS_API_KEY:…` supplies a file named `GEOBS_API_KEY` here |
 
@@ -99,8 +100,10 @@ Without `--ensure`, the CLI always attempts the normal validated refresh.
 
 The active snapshot is written to a unique same-directory 0600 temporary file,
 synced, renamed and (on Linux) the containing directory synced. Refresh locking
-uses exclusive creation of `<catalog>.refresh.lock`. A crash may leave a lock;
-confirm no refresher is active before removing that exact lock. Failed fetches,
+uses exclusive creation of `<catalog>.refresh.lock`. A lock older than 15
+minutes (far beyond the refresh timeouts and the Job deadline) is treated as
+left behind by a killed process and taken over automatically; a lock is only
+removed by the process that owns it. Failed fetches,
 pagination, unexpected counts and invalid snapshots keep the last good file.
 Readers validate schema and canonical collection hash; never edit the active
 file in place. Corrupt snapshots require operator repair/repopulation, not a

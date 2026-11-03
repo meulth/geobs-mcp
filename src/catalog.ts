@@ -86,6 +86,21 @@ export function parseCatalogSnapshot(raw: string, now = Date.now()): CatalogSnap
   return parsed.data;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+// Parsing and validating a catalog of up to 12 MB on every tool call is an
+// unauthenticated CPU/memory amplifier. The parsed snapshot is cached per store
+// (module scope, so per-request KvCatalog instances in a Worker isolate share
+// it) and reused only while the store returns the identical raw text. It is
+// deep-frozen because concurrent requests share the same object.
+const parsedSnapshots = new WeakMap<object, { raw: string; snapshot: CatalogSnapshot }>();
+
 export class KvCatalog implements CatalogReader {
   constructor(private readonly store: CatalogStore | undefined, private readonly now = Date.now) {}
 
@@ -93,7 +108,17 @@ export class KvCatalog implements CatalogReader {
     if (!this.store) throw new GeoBsError("UPSTREAM_UNAVAILABLE", "The OGC catalog cache is not configured.", true);
     const raw = await this.store.get(CATALOG_KEY, "text");
     if (raw === null) return null;
-    return parseCatalogSnapshot(raw, this.now());
+    const cached = parsedSnapshots.get(this.store);
+    if (cached && cached.raw === raw) {
+      // Keep the clock admission check of parseCatalogSnapshot on cache hits.
+      if (Date.parse(cached.snapshot.fetchedAt) > this.now() + 60_000) {
+        throw new GeoBsError("INVALID_UPSTREAM_RESPONSE", "The cached OGC catalog is invalid.");
+      }
+      return cached.snapshot;
+    }
+    const snapshot = deepFreeze(parseCatalogSnapshot(raw, this.now()));
+    parsedSnapshots.set(this.store, { raw, snapshot });
+    return snapshot;
   }
 
   async get(): Promise<CatalogSnapshot> {

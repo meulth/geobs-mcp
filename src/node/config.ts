@@ -4,6 +4,9 @@ import { isAbsolute, join } from "node:path";
 
 export const NODE_VERSION = "24.20.0";
 export const APP_PORT = 8080;
+// Each MCP exchange may buffer a 1 MB request plus up to 5 MB of upstream JSON.
+// Bounding parallel MCP exchanges keeps a public pod inside its memory limit.
+export const DEFAULT_MAX_CONCURRENT_REQUESTS = 32;
 export const DEFAULT_CATALOG_PATH = "/var/lib/geobs-mcp/catalog/ogc-catalog.v1.json";
 export const jsonLog = (event: Record<string, unknown>) => console.log(JSON.stringify(event));
 
@@ -31,7 +34,10 @@ export function nodeConfig(env: ConfigEnvironment) {
   }
   const catalogPath = env.GEOBS_CATALOG_PATH ?? DEFAULT_CATALOG_PATH;
   if (!isAbsolute(catalogPath)) throw new Error("GEOBS_CATALOG_PATH must be absolute.");
-  return { hosts, origins, catalogPath, bindAddress, publicBasePath: publicBasePath(env.GEOBS_PUBLIC_BASE_PATH) };
+  const concurrency = env.GEOBS_MAX_CONCURRENT_REQUESTS ?? String(DEFAULT_MAX_CONCURRENT_REQUESTS);
+  if (!/^[1-9][0-9]{0,3}$/.test(concurrency)) throw new Error("GEOBS_MAX_CONCURRENT_REQUESTS must be an integer between 1 and 9999.");
+  return { hosts, origins, catalogPath, bindAddress, publicBasePath: publicBasePath(env.GEOBS_PUBLIC_BASE_PATH),
+    maxConcurrentRequests: Number(concurrency) };
 }
 
 export async function readApiKey(env: ConfigEnvironment): Promise<string | undefined> {

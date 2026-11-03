@@ -7,6 +7,7 @@ import type { OgcFeaturesClient } from "../clients/ogcFeatures";
 import { findCollectionsForDataset } from "../discovery";
 import { asGeoBsError } from "../errors";
 import { compactText, selectLinks } from "./output";
+import { GEOBS_ORIGIN } from "../config";
 
 const getDatasetShape = {
   id: datasetIdSchema.describe("Known STAC product ID, or stacDatasetId from search_datasets_ogc (inferred from the OGC naming convention). Do not pass the long OGC layer ID.")
@@ -23,6 +24,15 @@ const getDatasetOutputShape = {
     collections: z.array(z.object({ id: z.string() }).catchall(z.json()))
   }).catchall(z.json())
 };
+
+function isGeoBsFeatureLink(href: string): boolean {
+  try {
+    const url = new URL(href);
+    return url.origin === GEOBS_ORIGIN && url.pathname.startsWith("/ogc/v1/wfs3/collections/");
+  } catch {
+    return false;
+  }
+}
 
 function mapAssets(assets: Record<string, StacAsset> | undefined) {
   return Object.entries(assets ?? {}).map(([key, asset]) => ({
@@ -65,9 +75,12 @@ export async function getDataset(
     ...(collection.links ?? []),
     ...items.flatMap((item) => item.links ?? [])
   ];
-  const directWfsLinks = allLinks.filter((link) =>
-    /\/ogc\/v1\/wfs3\/collections\//i.test(link.href)
-  );
+  // Upstream metadata reaches the model verbatim. Pass only the known link
+  // fields, a bounded number of links and only GeoBS-hosted feature links.
+  const directWfsLinks = allLinks
+    .filter((link) => typeof link.href === "string" && isGeoBsFeatureLink(link.href))
+    .slice(0, 20)
+    .map(({ href, rel, type, title }) => ({ href, rel, type, title }));
 
   const warnings: Array<{ source: string; error: string; message: string }> = [];
   if (itemsResult.status === "rejected") {
@@ -108,7 +121,7 @@ export async function getDataset(
         description: compactText(entry.description),
         extent: entry.extent,
         crs: entry.crs ?? [],
-        links: entry.links ?? []
+        links: selectLinks(entry.links)
       }))
     },
     warnings

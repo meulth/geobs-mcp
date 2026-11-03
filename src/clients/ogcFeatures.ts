@@ -71,15 +71,24 @@ export interface FeatureQueryResult {
   };
 }
 
-const reservedParameters = new Set([
-  "f",
-  "limit",
-  "bbox",
-  "bbox-crs",
-  "crs",
-  "datetime",
-  "properties",
-  "map"
+// Filters are sent as query parameters, so every name that the upstream could
+// interpret as a control parameter (OGC API Features Parts 1–4, common server
+// extensions, WFS 2 KVP and credentials) is refused. Without this, a filter
+// named "filter" would pass arbitrary CQL, "offset" would page past the
+// coverage logic, and "skipGeometry" would break circle-mode distances.
+export const reservedParameters = new Set([
+  // OGC API Features Part 1 / Part 2 (CRS)
+  "f", "limit", "bbox", "bbox-crs", "crs", "datetime",
+  // Part 3 (filtering), Part 4 and common extensions
+  "filter", "filter-lang", "filter-crs", "properties", "exclude-properties",
+  "sortby", "skipgeometry", "q", "ids", "offset", "startindex", "next", "token",
+  "resulttype", "lang", "profile", "map",
+  // WFS 2 KVP accepted by some gateways
+  "service", "request", "version", "typename", "typenames", "count",
+  "maxfeatures", "outputformat", "srsname", "propertyname", "resourceid",
+  "featureid", "cql_filter", "sortorder",
+  // Credentials must never be injectable
+  "apikey", "api_key", "access_token", "authorization"
 ]);
 
 function validateCollectionId(id: string): string {

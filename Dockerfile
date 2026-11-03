@@ -25,7 +25,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     GEOBS_BIND_ADDRESS=0.0.0.0 \
     GEOBS_CATALOG_PATH=/var/lib/geobs-mcp/catalog/ogc-catalog.v1.json
-RUN mkdir -p /var/lib/geobs-mcp/catalog && chown -R 1000:1000 /var/lib/geobs-mcp
+# The bundles are self-contained: package managers are attack surface only.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+      /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-* \
+ && mkdir -p /var/lib/geobs-mcp/catalog && chown -R 1000:1000 /var/lib/geobs-mcp
 # Only the bundles, their licenses and build metadata enter the runtime.
 COPY --from=build /build/dist/node/ ./
 USER 1000:1000
