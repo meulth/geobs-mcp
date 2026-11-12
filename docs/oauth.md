@@ -44,8 +44,10 @@ policy when MFA is required.
 For the dedicated self-hosted Access application, enable Managed OAuth,
 restrict dynamic registration to the clients' actual callback URIs, and disable
 unneeded localhost/loopback registrations. Configure a short OAuth access-token
-lifetime (for example five minutes) and an application/policy JWT lifetime of
-at most fifteen minutes. Longer refresh grants need an explicit operator
+lifetime (for example five minutes) and an application/policy session duration
+of at most fifteen minutes. These are two separate settings: the session
+duration, not the OAuth access-token lifetime, determines the lifetime of the
+assertion that Node verifies. Longer refresh grants need an explicit operator
 decision. Re-read the resulting configuration rather than assuming defaults.
 
 Example non-secret Node settings:
@@ -76,7 +78,7 @@ upstream key or origin JWT to visitors.
 
 | Route | Node behavior in protected mode |
 | --- | --- |
-| `/mcp` and configured public-prefix alias | All methods except OPTIONS require a verified personal assertion before body buffering or MCP dispatch. |
+| `/mcp` and configured public-prefix alias | All methods except OPTIONS require a verified personal assertion before body buffering or MCP dispatch. No assertion: `401` with the OAuth challenge. Refused assertion: `403` without a challenge. |
 | OPTIONS on `/mcp` | Restricted CORS preflight; no tool execution or authentication bypass. |
 | `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/<public MCP path>` | Public resource metadata, referencing the configured authorization server. |
 | OAuth authorization-server metadata, registration, login and token routes | Served by Access, not implemented or proxied by Node. |
@@ -93,6 +95,37 @@ Swagger can use an authenticated same-origin Access browser session or an
 OAuth access token at the public gateway. Do not paste an origin assertion
 or GeoBS API key into Swagger. An expired browser session may need another
 interactive login before Try it out works again.
+
+## Troubleshooting sign-in
+
+Behind Managed OAuth, Access owns the `401` challenge: a request without a
+valid OAuth token is answered at the gateway and never reaches Node. Node
+therefore sends its own challenge only when a request carries no assertion at
+all, which means it did not pass the Access application (direct origin access,
+or an alias that the application does not cover).
+
+A request that carries an assertion has already completed OAuth at the gateway.
+If Node refuses that assertion, it answers `403` with
+`{"error":"access_assertion_rejected"}` and no `WWW-Authenticate` header. A
+`401` at this point would make clients discard a valid grant and repeat the
+login without ever succeeding. The reason is logged as an `access_denied` event
+with a fixed code; no token, identity or claim value is logged.
+
+| `reason` | Meaning and usual correction |
+| --- | --- |
+| `missing` | No `Cf-Access-Jwt-Assertion`. The route is not covered by the Access application, or the origin was reached directly. |
+| `lifetime` | The assertion's signed lifetime or age exceeds `GEOBS_ACCESS_MAX_TOKEN_LIFETIME_SECONDS`. The assertion lifetime is the Access application (or policy) session duration, which defaults to 24 hours; it is not the Managed OAuth access-token lifetime. Set the session duration to at most fifteen minutes. |
+| `audience` | `GEOBS_ACCESS_AUDIENCE` is not the AUD tag of the application in front of this route. Recreating an application changes its AUD tag. |
+| `issuer`, `unknown_key`, `signature` | `GEOBS_ACCESS_ISSUER` names a different team than the one that signed the assertion, or the assertion is forged. |
+| `keys_unavailable` | Node cannot fetch `<issuer>/cdn-cgi/access/certs` within three seconds. Check outbound HTTPS and DNS from the Node host or cluster. |
+| `token_type`, `identity`, `claims` | Not a personal application token: an org session, a service token, or an assertion without the required claims. Use an identity-based Allow policy. |
+| `expired`, `not_yet_valid` | Clock difference between Node and the provider beyond five seconds, or a replayed assertion. |
+| `malformed` | The header is not a single compact RS256 JWT, for example a duplicated header or an opaque OAuth token placed in it. |
+
+If a client reports a failed authorization and Node logs neither an
+`access_denied` event nor an `http_request` for `/mcp`, the failure happened
+between the client and the gateway (discovery, client registration, redirect
+URI allowlist, policy), not in this server.
 
 ## Client acceptance and revocation
 
@@ -126,7 +159,8 @@ Removing only a browser cookie is not a complete token-revocation test.
 Run `npm run check`, `npm run build:node`, `npm run test:node-build` and
 `node scripts/smoke-node.mjs dist/node --access`. Unit tests use synthetic signed
 tokens and mocked public keys; the extra compiled smoke checks anonymous
-rejection, metadata, health and OAuth-aware Swagger without external services.
+rejection, a refused assertion, metadata, health and OAuth-aware Swagger without
+external services.
 Neither test creates provider resources or completes a real login.
 
 Record provider settings, application/policy/IdP references, allowed callback
