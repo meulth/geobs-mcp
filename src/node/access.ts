@@ -4,22 +4,30 @@ import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 // value, identity, token fragment, key URL or library message.
 export type AccessRejection = "missing" | "malformed" | "keys_unavailable" | "unknown_key" | "signature" |
   "issuer" | "audience" | "expired" | "not_yet_valid" | "lifetime" | "token_type" | "identity" | "claims";
-export type AccessDecision = { ok: true } | { ok: false; reason: AccessRejection };
+// `claim` names which fixed claim or header a "claims"/"identity" refusal is
+// about and whether it was absent or unusable; it is never a claim value.
+export type AccessDecision = { ok: true } | { ok: false; reason: AccessRejection; claim?: string };
 
-function rejection(error: unknown): AccessRejection {
-  if (error instanceof errors.JWTExpired) return error.claim === "exp" ? "expired" : "lifetime";
+const reportableClaims = ["typ", "exp", "iat", "nbf", "sub", "email", "type"];
+function claimDetail(claim: unknown, state: "missing" | "invalid") {
+  // The name comes from this module's own checks; anything else is withheld.
+  return typeof claim === "string" && reportableClaims.includes(claim) ? { claim: `${claim}:${state}` } : {};
+}
+
+function rejection(error: unknown): { ok: false; reason: AccessRejection; claim?: string } {
+  if (error instanceof errors.JWTExpired) return { ok: false, reason: error.claim === "exp" ? "expired" : "lifetime" };
   if (error instanceof errors.JWTClaimValidationFailed) {
-    if (error.claim === "iss") return "issuer";
-    if (error.claim === "aud") return "audience";
-    if (error.reason === "check_failed" && (error.claim === "nbf" || error.claim === "iat")) return "not_yet_valid";
-    return "claims";
+    if (error.claim === "iss") return { ok: false, reason: "issuer" };
+    if (error.claim === "aud") return { ok: false, reason: "audience" };
+    if (error.reason === "check_failed" && (error.claim === "nbf" || error.claim === "iat")) return { ok: false, reason: "not_yet_valid" };
+    return { ok: false, reason: "claims", ...claimDetail(error.claim, error.reason === "missing" ? "missing" : "invalid") };
   }
-  if (error instanceof errors.JWKSNoMatchingKey) return "unknown_key";
-  if (error instanceof errors.JWSSignatureVerificationFailed) return "signature";
+  if (error instanceof errors.JWKSNoMatchingKey) return { ok: false, reason: "unknown_key" };
+  if (error instanceof errors.JWSSignatureVerificationFailed) return { ok: false, reason: "signature" };
   if (error instanceof errors.JWSInvalid || error instanceof errors.JWTInvalid ||
-      error instanceof errors.JOSEAlgNotAllowed || error instanceof errors.JOSENotSupported) return "malformed";
+      error instanceof errors.JOSEAlgNotAllowed || error instanceof errors.JOSENotSupported) return { ok: false, reason: "malformed" };
   // Timeouts, non-200 key responses, invalid key documents and network errors.
-  return "keys_unavailable";
+  return { ok: false, reason: "keys_unavailable" };
 }
 
 export type AccessConfiguration = {
@@ -95,25 +103,32 @@ export function createAccessGuard(config: AccessConfiguration) {
         return { ok: false, reason: "malformed" };
       }
       try {
-        const { payload } = await jwtVerify(assertion, keys, {
-          issuer: config.issuer, audience: config.audience, algorithms: ["RS256"], typ: "JWT",
-          requiredClaims: ["exp", "iat", "nbf", "sub", "email", "type"],
+        // Signature, issuer, the dedicated application AUD and expiry are the
+        // security boundary. The provider does not promise a `typ` header,
+        // `nbf` or `type` on every assertion it forwards, so those are
+        // verified whenever present instead of being demanded.
+        const { payload, protectedHeader } = await jwtVerify(assertion, keys, {
+          issuer: config.issuer, audience: config.audience, algorithms: ["RS256"],
+          requiredClaims: ["exp", "iat", "sub", "email"],
           maxTokenAge: config.maxTokenLifetimeSeconds, clockTolerance: 5
         });
+        if (protectedHeader.typ !== undefined && !/^(application\/)?jwt$/i.test(protectedHeader.typ)) {
+          return { ok: false, reason: "claims", claim: "typ:invalid" };
+        }
         // Org and non-identity/service tokens do not grant personal MCP access.
         // The dedicated app AUD is the permission boundary for all five
         // read-only tools. Access enforces OAuth scopes/policies at its edge;
         // it does not promise an OAuth scope claim in the origin assertion.
-        if (payload.type !== "app") return { ok: false, reason: "token_type" };
-        if (typeof payload.sub !== "string" || payload.sub.length === 0 ||
-            typeof payload.email !== "string" || !/^[^\s@]+@[^\s@]+$/.test(payload.email)) return { ok: false, reason: "identity" };
+        if (payload.type !== undefined && payload.type !== "app") return { ok: false, reason: "token_type" };
+        if (typeof payload.sub !== "string" || payload.sub.length === 0) return { ok: false, reason: "identity", claim: "sub:invalid" };
+        if (typeof payload.email !== "string" || !/^[^\s@]+@[^\s@]+$/.test(payload.email)) return { ok: false, reason: "identity", claim: "email:invalid" };
         if (typeof payload.iat !== "number" || typeof payload.exp !== "number" || payload.exp <= payload.iat ||
             payload.exp - payload.iat > config.maxTokenLifetimeSeconds) return { ok: false, reason: "lifetime" };
         return { ok: true };
       } catch (error) {
         // No JWT, identity, claim value, key URL or library message leaves
-        // this function; only the fixed reason code does.
-        return { ok: false, reason: rejection(error) };
+        // this function; only the fixed reason code and claim name do.
+        return rejection(error);
       }
     },
     async accepts(assertion: string | undefined): Promise<boolean> {
