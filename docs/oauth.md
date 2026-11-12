@@ -20,7 +20,10 @@ resource binding, personal login, policies, grants and token refresh. It
 resolves the client's opaque access token and injects `Cf-Access-Jwt-Assertion`.
 The Node server verifies that JWT using `jose` and the configured team's
 public signing keys. It checks RS256, issuer, the dedicated application's AUD,
-required timestamps, token lifetime and a personal application identity.
+`exp` and `iat`, token lifetime and a personal identity (`sub` and `email`).
+A `typ` header, `nbf` and `type` are verified whenever the assertion carries
+them but are not demanded, because the provider does not document them as
+guaranteed on every forwarded assertion.
 Org-session tokens and non-identity/service tokens are rejected. Cookies,
 plain identity headers, forwarded headers and `Authorization` alone never
 authenticate a direct origin request. Client-supplied key/issuer URLs are not
@@ -118,7 +121,8 @@ with a fixed code; no token, identity or claim value is logged.
 | `audience` | `GEOBS_ACCESS_AUDIENCE` is not the AUD tag of the application in front of this route. Recreating an application changes its AUD tag. |
 | `issuer`, `unknown_key`, `signature` | `GEOBS_ACCESS_ISSUER` names a different team than the one that signed the assertion, or the assertion is forged. |
 | `keys_unavailable` | Node cannot fetch `<issuer>/cdn-cgi/access/certs` within three seconds. Check outbound HTTPS and DNS from the Node host or cluster. |
-| `token_type`, `identity`, `claims` | Not a personal application token: an org session, a service token, or an assertion without the required claims. Use an identity-based Allow policy. |
+| `token_type` | The assertion carries a `type` other than `app`, for example an org session token. |
+| `identity`, `claims` | A required claim is absent or unusable. The event's `claim` field names it and its state, for example `email:missing` or `sub:invalid`; it never contains the value. Without `sub` and `email` the assertion is not a personal identity (service tokens carry neither): use an identity-based Allow policy. |
 | `expired`, `not_yet_valid` | Clock difference between Node and the provider beyond five seconds, or a replayed assertion. |
 | `malformed` | The header is not a single compact RS256 JWT, for example a duplicated header or an opaque OAuth token placed in it. |
 

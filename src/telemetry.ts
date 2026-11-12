@@ -8,7 +8,7 @@ type Event = {
   error_code?: GeoBsErrorCode;
 } & (
   | { event: "http_request"; route: "mcp" | "health" | "other"; method: string; status: number }
-  | { event: "access_denied"; reason: string }
+  | { event: "access_denied"; reason: string; claim?: string }
   | { event: "mcp_tool"; tool: string; output_bytes?: number }
   | { event: "geobs_upstream"; upstream: string; status?: number; response_bytes?: number }
   | { event: "catalog_cache"; catalog_age_seconds?: number; catalog_stale?: boolean; collection_count?: number }

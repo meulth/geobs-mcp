@@ -45,12 +45,12 @@ function keys(available = true) {
   });
 }
 
-async function token(changes: JWTPayload = {}, omit: string[] = [], key = signingKey, kid = "current") {
+async function token(changes: JWTPayload = {}, omit: string[] = [], key = signingKey, kid = "current", typ: string | undefined = "JWT") {
   const now = Math.floor(Date.now() / 1000);
   const payload: JWTPayload = { iss: issuer, aud: [audience], sub: "synthetic-user", email: "person@example.test",
     type: "app", iat: now, nbf: now, exp: now + 300, ...changes };
   for (const name of omit) delete payload[name];
-  return new SignJWT(payload).setProtectedHeader({ alg: "RS256", kid, typ: "JWT" }).sign(key);
+  return new SignJWT(payload).setProtectedHeader({ alg: "RS256", kid, ...(typ === undefined ? {} : { typ }) }).sign(key);
 }
 
 async function fixture(basePath = "") {
@@ -114,22 +114,38 @@ describe("signed personal Access assertion", () => {
     { name: "not yet valid", reason: "not_yet_valid", changes: { nbf: 4_000_000_000 } },
     { name: "future issue time", reason: "not_yet_valid", changes: { iat: 4_000_000_000, exp: 4_000_000_300 } },
     { name: "org session", reason: "token_type", changes: { type: "org" } },
-    { name: "empty subject", reason: "identity", changes: { sub: "" } },
-    { name: "service identity", reason: "identity", changes: { email: "" } },
+    { name: "empty subject", reason: "identity", claim: "sub:invalid", changes: { sub: "" } },
+    { name: "service identity", reason: "identity", claim: "email:invalid", changes: { email: "" } },
+    { name: "non-numeric not-before", reason: "claims", claim: "nbf:invalid", changes: { nbf: "soon" as unknown as number } },
     { name: "long lifetime", reason: "lifetime", changes: { exp: Math.floor(Date.now() / 1000) + 3600 } }
-  ])("rejects $name with reason $reason", async ({ changes, reason }) => {
+  ])("rejects $name with reason $reason", async ({ changes, reason, claim }: { changes: JWTPayload; reason: string; claim?: string }) => {
     keys();
     const guard = createAccessGuard(config);
     const signed = await token(changes);
     expect(await guard.accepts(signed)).toBe(false);
-    expect(await guard.verify(signed)).toEqual({ ok: false, reason });
+    expect(await guard.verify(signed)).toEqual({ ok: false, reason, ...(claim ? { claim } : {}) });
   });
-  it.each(["exp", "iat", "nbf", "sub", "email", "type"])("requires claim %s", async claim => {
+  it.each(["exp", "iat", "sub", "email"])("requires claim %s and names it", async claim => {
     keys();
     const guard = createAccessGuard(config);
     const signed = await token({}, [claim]);
     expect(await guard.accepts(signed)).toBe(false);
-    expect(await guard.verify(signed)).toEqual({ ok: false, reason: "claims" });
+    expect(await guard.verify(signed)).toEqual({ ok: false, reason: "claims", claim: `${claim}:missing` });
+  });
+  it("accepts a signed personal assertion without the optional typ header, nbf and type", async () => {
+    keys();
+    const guard = createAccessGuard(config);
+    expect(await guard.verify(await token({}, ["nbf"]))).toEqual({ ok: true });
+    expect(await guard.verify(await token({}, ["type"]))).toEqual({ ok: true });
+    expect(await guard.verify(await token({}, [], signingKey, "current", undefined))).toEqual({ ok: true });
+    expect(await guard.verify(await token({}, ["nbf", "type"], signingKey, "current", undefined))).toEqual({ ok: true });
+    // Present but wrong values are still refused.
+    expect(await guard.verify(await token({}, [], signingKey, "current", "at+jwt"))).toEqual({ ok: false, reason: "claims", claim: "typ:invalid" });
+    expect(await guard.verify(await token({ type: "org" }, ["nbf"]))).toEqual({ ok: false, reason: "token_type" });
+    // The optional claims never replace signature, audience, identity or lifetime checks.
+    expect(await guard.verify(await token({}, ["nbf", "type"], otherKey, "current", undefined))).toEqual({ ok: false, reason: "signature" });
+    expect(await guard.verify(await token({ aud: ["b".repeat(64)] }, ["nbf", "type"]))).toEqual({ ok: false, reason: "audience" });
+    expect(await guard.verify(await token({ exp: Math.floor(Date.now() / 1000) + 3600 }, ["nbf", "type"]))).toEqual({ ok: false, reason: "lifetime" });
   });
   it("names the refusal without exposing token content", async () => {
     keys();
@@ -217,7 +233,8 @@ describe("OAuth-protected Node HTTP boundary", () => {
       ["lifetime", await token({ exp: now + 86_400 })],
       ["audience", await token({ aud: ["b".repeat(64)] })],
       ["signature", await token({}, [], otherKey)],
-      ["token_type", await token({ type: "org" })]
+      ["token_type", await token({ type: "org" })],
+      ["claims", await token({}, ["email"])]
     ];
     for (const [reason, assertion] of cases) {
       logs.length = 0;
@@ -229,6 +246,8 @@ describe("OAuth-protected Node HTTP boundary", () => {
       expect(response.headers.get("access-control-allow-origin")).toBe("https://geo.example.test");
       expect(await response.json()).toEqual({ error: "access_assertion_rejected" });
       expect(logs.filter(event => event.event === "access_denied").map(event => event.reason)).toEqual([reason]);
+      // A claims refusal names the claim, never its value.
+      expect(logs.find(event => event.event === "access_denied")?.claim).toBe(reason === "claims" ? "email:missing" : undefined);
       expect(logs.find(event => event.event === "http_request")).toMatchObject({ route: "mcp", status: 403 });
       expect(JSON.stringify(logs)).not.toMatch(/person@example|synthetic-user|eyJ|oauth:opaque/);
     }

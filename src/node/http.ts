@@ -87,9 +87,10 @@ export function createNodeServer(options: Options) {
           // login, so it is a 403 with a logged reason instead.
           const challenge = decision.reason === "missing";
           const reason = decision.reason;
+          const claim = decision.claim;
           const verificationMs = elapsed(verifying);
           const denied = await observeHttp(new Request(internalMcpUrl(url), { method, signal: abort.signal }), async () => {
-            recordEvent({ event: "access_denied", reason, outcome: "error", duration_ms: verificationMs });
+            recordEvent({ event: "access_denied", reason, ...(claim ? { claim } : {}), outcome: "error", duration_ms: verificationMs });
             return json({ error: challenge ? "unauthorized" : "access_assertion_rejected" }, challenge ? 401 : 403);
           }, options.log);
           outgoing.writeHead(denied.status, {
