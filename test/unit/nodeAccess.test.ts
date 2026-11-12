@@ -122,14 +122,14 @@ describe("signed personal Access assertion", () => {
     const guard = createAccessGuard(config);
     const signed = await token(changes);
     expect(await guard.accepts(signed)).toBe(false);
-    expect(await guard.verify(signed)).toEqual({ ok: false, reason });
+    expect(await guard.verify(signed)).toMatchObject({ ok: false, reason });
   });
   it.each(["exp", "iat", "nbf", "sub", "email", "type"])("requires claim %s", async claim => {
     keys();
     const guard = createAccessGuard(config);
     const signed = await token({}, [claim]);
     expect(await guard.accepts(signed)).toBe(false);
-    expect(await guard.verify(signed)).toEqual({ ok: false, reason: "claims" });
+    expect(await guard.verify(signed)).toEqual({ ok: false, reason: "claims", claim, claim_issue: "missing" });
   });
   it("names the refusal without exposing token content", async () => {
     keys();
@@ -146,6 +146,26 @@ describe("signed personal Access assertion", () => {
       .toEqual({ ok: false, reason: "malformed" });
     keys(false);
     expect(await createAccessGuard(config).verify(valid)).toEqual({ ok: false, reason: "keys_unavailable" });
+  });
+  it("reports only fixed claim diagnostics through HTTP, never claim values or library errors", async () => {
+    keys();
+    const { base, logs, catalog } = await fixture();
+    for (const [signed, claim, issue] of [
+      [await token({}, ["nbf"]), "nbf", "missing"],
+      [await token({ nbf: "private-claim-value" as unknown as number }), "nbf", "invalid"],
+      [await token({ nbf: 4_000_000_000 }), "nbf", "check_failed"],
+      [await token({ aud: ["b".repeat(64)] }), "aud", "check_failed"]
+    ]) {
+      logs.length = 0;
+      const response = await fetch(`${base}/mcp`, { method: "POST", body: rpc,
+        headers: { ...rpcHeaders, "cf-access-jwt-assertion": signed! } });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "access_assertion_rejected" });
+      expect(logs.find(event => event.event === "access_denied")).toMatchObject({ claim, claim_issue: issue });
+      expect(JSON.stringify(logs)).not.toMatch(/private-claim-value|person@example|synthetic-user|eyJ|JWTClaimValidationFailed/);
+      expect(JSON.stringify(logs)).not.toContain(signed);
+    }
+    expect(catalog.get).not.toHaveBeenCalled();
   });
   it("rejects forged signatures, unknown key IDs, alg=none, oversized and duplicated assertions", async () => {
     keys();

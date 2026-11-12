@@ -89,7 +89,8 @@ export function createNodeServer(options: Options) {
           const reason = decision.reason;
           const verificationMs = elapsed(verifying);
           const denied = await observeHttp(new Request(internalMcpUrl(url), { method, signal: abort.signal }), async () => {
-            recordEvent({ event: "access_denied", reason, outcome: "error", duration_ms: verificationMs });
+            recordEvent({ event: "access_denied", reason, ...(decision.claim ? { claim: decision.claim, claim_issue: decision.claim_issue } : {}),
+              outcome: "error", duration_ms: verificationMs });
             return json({ error: challenge ? "unauthorized" : "access_assertion_rejected" }, challenge ? 401 : 403);
           }, options.log);
           outgoing.writeHead(denied.status, {

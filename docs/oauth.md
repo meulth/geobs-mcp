@@ -109,7 +109,10 @@ If Node refuses that assertion, it answers `403` with
 `{"error":"access_assertion_rejected"}` and no `WWW-Authenticate` header. A
 `401` at this point would make clients discard a valid grant and repeat the
 login without ever succeeding. The reason is logged as an `access_denied` event
-with a fixed code; no token, identity or claim value is logged.
+with a fixed code; no token, identity or claim value is logged. Claim validation
+failures also record an allowlisted `claim` name and `claim_issue` (`missing`,
+`invalid` or `check_failed`). These fields describe the failure without exposing
+the assertion or the validation library's error message/payload.
 
 | `reason` | Meaning and usual correction |
 | --- | --- |

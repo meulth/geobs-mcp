@@ -4,7 +4,23 @@ import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 // value, identity, token fragment, key URL or library message.
 export type AccessRejection = "missing" | "malformed" | "keys_unavailable" | "unknown_key" | "signature" |
   "issuer" | "audience" | "expired" | "not_yet_valid" | "lifetime" | "token_type" | "identity" | "claims";
-export type AccessDecision = { ok: true } | { ok: false; reason: AccessRejection };
+const claimNames = ["iss", "aud", "exp", "iat", "nbf", "sub", "email", "type", "typ"] as const;
+type ClaimName = typeof claimNames[number];
+type ClaimIssue = "missing" | "invalid" | "check_failed";
+export type AccessDecision = { ok: true } | { ok: false; reason: AccessRejection; claim?: ClaimName; claim_issue?: ClaimIssue };
+
+// Library errors also hold the entire payload. Project only a fixed field
+// name and failure category, never the error object, message or claim value.
+function rejected(error: unknown): AccessDecision {
+  const decision: AccessDecision = { ok: false, reason: rejection(error) };
+  if (error instanceof errors.JWTClaimValidationFailed &&
+      claimNames.includes(error.claim as ClaimName) &&
+      ["missing", "invalid", "check_failed"].includes(error.reason)) {
+    decision.claim = error.claim as ClaimName;
+    decision.claim_issue = error.reason as ClaimIssue;
+  }
+  return decision;
+}
 
 function rejection(error: unknown): AccessRejection {
   if (error instanceof errors.JWTExpired) return error.claim === "exp" ? "expired" : "lifetime";
@@ -113,7 +129,7 @@ export function createAccessGuard(config: AccessConfiguration) {
       } catch (error) {
         // No JWT, identity, claim value, key URL or library message leaves
         // this function; only the fixed reason code does.
-        return { ok: false, reason: rejection(error) };
+        return rejected(error);
       }
     },
     async accepts(assertion: string | undefined): Promise<boolean> {

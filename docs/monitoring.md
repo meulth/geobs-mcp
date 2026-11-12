@@ -14,7 +14,7 @@ applicable; they are not CPU measurements. Request IDs correlate related events.
 | Event | Additional fields | Meaning |
 | --- | --- | --- |
 | `http_request` | `route`, `method`, `status` | One completed HTTP request; MCP protocol requests also count. |
-| `access_denied` | `reason` (fixed code such as `missing`, `lifetime`, `audience`, `keys_unavailable`) | Node protected mode only: `/mcp` was refused before dispatch. Never contains a token, identity or claim value. See [personal OAuth](oauth.md#troubleshooting-sign-in). |
+| `access_denied` | `reason` (fixed code such as `missing`, `lifetime`, `audience`, `keys_unavailable`), optional allowlisted `claim` and `claim_issue` | Node protected mode only: `/mcp` was refused before dispatch. Never contains a token, identity or claim value. See [personal OAuth](oauth.md#troubleshooting-sign-in). |
 | `mcp_tool` | `tool`, `output_bytes` on success, `error_code` on failure | A completed registered tool callback. |
 | `geobs_upstream` | `upstream`, optional `status`, `response_bytes`, `error_code` | One GeoBS HTTP attempt, including body reading and JSON parsing. |
 | `catalog_cache` | On success: `catalog_age_seconds`, `catalog_stale`, `collection_count`; on failure: `error_code` | A KV catalog read and validation. |
