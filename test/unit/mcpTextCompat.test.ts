@@ -45,9 +45,9 @@ function routeFetch(url: URL): Response | undefined {
   if (pathname === "/search/v2/search") {
     return jsonResponse([
       {
-        label: "Schauenburgerstrasse 17, 4051 Basel ",
+        label: "Klosterberg 5, 4051 Basel ",
         layer_name: "Adresse",
-        details: { street: "Schauenburgerstrasse", number: "17", plz: "4051" },
+        details: { street: "Klosterberg", number: "5", plz: "4051" },
         geom: "POINT (2611234.567 1267890.123)"
       }
     ]);
@@ -98,7 +98,7 @@ function routeFetch(url: URL): Response | undefined {
         {
           type: "Feature",
           id: "feat-1",
-          properties: { strasse: "Schauenburgerstrasse" }
+          properties: { strasse: "Klosterberg" }
         }
       ]
     });
@@ -122,7 +122,7 @@ function routeFetch(url: URL): Response | undefined {
       RealEstates: [
         {
           EGRID: ids,
-          Address: "Schauenburgerstrasse 17, 4051 Basel",
+          Address: "Klosterberg 5, 4051 Basel",
           LandCoverageInfo: [{ Type: "Gebäude", Area: 123 }]
         }
       ]
@@ -243,7 +243,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     try {
       const result = await client.callTool({
         name: "search_api_v2",
-        arguments: { query: "Schauenburgerstrasse 17" }
+        arguments: { query: "Klosterberg 5" }
       });
 
       expect(result.isError).toBeFalsy();
@@ -266,7 +266,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     try {
       const search = await client.callTool({
         name: "search_api_v2",
-        arguments: { query: "Schauenburgerstrasse 17" }
+        arguments: { query: "Klosterberg 5" }
       });
       const searchData = structuredContentFromText(search) as {
         results: Array<{ coordinate: [number, number] }>;
@@ -281,7 +281,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       expect(property.isError).toBeFalsy();
       const propertyFromText = structuredContentFromText(property);
       expect(propertyFromText).toEqual(property.structuredContent);
-      expect(JSON.stringify(propertyFromText)).toContain("Schauenburgerstrasse");
+      expect(JSON.stringify(propertyFromText)).toContain("Klosterberg");
     } finally {
       await client.close();
       await server.close();
