@@ -108,7 +108,8 @@ export function buildOpenApi(tools: readonly ToolDocumentation[], basePath: stri
             schema: { oneOf: [...tools.map(tool => ref(`${tool.name}_request`)), ref("ToolsListRequest"), ref("InitializeRequest")] }, examples
           } } },
           responses: {
-            ...(authenticated ? { "401": { description: "Personal authentication required. WWW-Authenticate identifies OAuth protected-resource metadata; complete discovery/login at the public gateway." } } : {}),
+            ...(authenticated ? { "401": { description: "Personal authentication required. WWW-Authenticate identifies OAuth protected-resource metadata; complete discovery/login at the public gateway." },
+              "403": { description: "The gateway's signed identity assertion was refused by this server (for example wrong application, key or lifetime). Signing in again does not help; the operator finds the reason code in the server log." } } : {}),
             "200": { description: "Tool result (including controlled tool errors), tools/list or initialize result. SSE data frames carry the same JSON-RPC envelopes.", content: {
               "application/json": { schema: { anyOf: [ref("ToolResult"), ref("JsonRpcError"), { type: "object", required: ["jsonrpc", "id", "result"], properties: { jsonrpc: { const: "2.0" }, id, result: { type: "object" } } }] } },
               "text/event-stream": { schema: { type: "string" }, example: 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"<tool output>"}],"isError":false}}\n\n' }

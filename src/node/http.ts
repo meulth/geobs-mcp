@@ -5,7 +5,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createMcpHandler } from "agents/mcp/server";
 import type { CatalogReader } from "../catalog";
 import { createGeoBsServer } from "../mcp/server";
-import { observeHttp, type TelemetrySink } from "../telemetry";
+import { elapsed, observeHttp, recordEvent, type TelemetrySink } from "../telemetry";
 import { getToolDocumentation } from "../mcp/register";
 import { DEFAULT_MAX_CONCURRENT_REQUESTS, publicBasePath } from "./config";
 import { buildOpenApi } from "./openapi";
@@ -14,6 +14,14 @@ import { createAccessGuard, type AccessConfiguration } from "./access";
 
 export const MAX_REQUEST_BYTES = 1_000_000;
 type Options = { hosts: string[]; origins: string[]; publicBasePath?: string; apiKey?: string; catalog: CatalogReader; log?: TelemetrySink; maxConcurrentRequests?: number; access?: AccessConfiguration };
+
+// Telemetry labels the protected endpoint by its internal route, also when
+// it is reached through the configured public-prefix alias.
+function internalMcpUrl(url: URL) {
+  const internal = new URL(url);
+  internal.pathname = "/mcp";
+  return internal;
+}
 
 function json(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } });
@@ -70,14 +78,25 @@ export function createNodeServer(options: Options) {
         }
         activeMcp++;
         countedMcp = true;
-        if (access && !await access.accepts(headers.get("cf-access-jwt-assertion") ?? undefined)) {
-          const denied = await observeHttp(new Request(url, { method, signal: abort.signal }),
-            async () => json({ error: "unauthorized" }, 401), options.log);
+        const verifying = performance.now();
+        const decision = access ? await access.verify(headers.get("cf-access-jwt-assertion") ?? undefined) : undefined;
+        if (decision && !decision.ok) {
+          // Only a request without any assertion gets the OAuth challenge. A
+          // refused assertion came through the gateway's own OAuth boundary:
+          // a 401 there makes clients discard a valid grant and loop through
+          // login, so it is a 403 with a logged reason instead.
+          const challenge = decision.reason === "missing";
+          const reason = decision.reason;
+          const verificationMs = elapsed(verifying);
+          const denied = await observeHttp(new Request(internalMcpUrl(url), { method, signal: abort.signal }), async () => {
+            recordEvent({ event: "access_denied", reason, outcome: "error", duration_ms: verificationMs });
+            return json({ error: challenge ? "unauthorized" : "access_assertion_rejected" }, challenge ? 401 : 403);
+          }, options.log);
           outgoing.writeHead(denied.status, {
             "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff",
-            "www-authenticate": access.challenge, connection: "close",
+            connection: "close", ...(challenge ? { "www-authenticate": access!.challenge } : {}),
             ...(origin ? { "access-control-allow-origin": origin, vary: "Origin",
-              "access-control-expose-headers": "WWW-Authenticate" } : {})
+              ...(challenge ? { "access-control-expose-headers": "WWW-Authenticate" } : {}) } : {})
           });
           outgoing.end(await denied.text());
           return;

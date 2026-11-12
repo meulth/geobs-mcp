@@ -50,13 +50,18 @@ try {
     const response = await fetch("http://127.0.0.1:8080/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
     assert.equal(response.status, 401);
     assert.equal(response.headers.get("www-authenticate"), 'Bearer resource_metadata="https://geo.example.test/.well-known/oauth-protected-resource/mcp"');
+    // A refused assertion is not a login problem: no second OAuth challenge.
+    const refused = await fetch("http://127.0.0.1:8080/mcp", { method: "POST", headers: { "cf-access-jwt-assertion": "a.b.c" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+    assert.equal(refused.status, 403);
+    assert.equal(refused.headers.get("www-authenticate"), null);
+    assert.match(output, /"event":"access_denied"/);
     const metadata = await (await fetch("http://127.0.0.1:8080/.well-known/oauth-protected-resource/mcp")).json();
     assert.equal(metadata.resource, "https://geo.example.test/mcp");
     assert.deepEqual(metadata.authorization_servers, ["https://geo.example.test"]);
     assert.deepEqual(spec.security, [{ personalOAuth: [] }]);
     assert.ok(!output.includes('"mcp_tool"'));
     console.log(JSON.stringify({ result: "passed", artifact: release, node: process.versions.node,
-      checks: ["compiled Access configuration", "anonymous MCP rejection", "OAuth challenge and public metadata", "local health/readiness", "public OAuth-aware Swagger"] }));
+      checks: ["compiled Access configuration", "anonymous MCP rejection", "refused assertion without login loop", "OAuth challenge and public metadata", "local health/readiness", "public OAuth-aware Swagger"] }));
   } else {
     const legacy = await fetch("http://127.0.0.1:8080/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
     assert.match(legacy.headers.get("content-type"), /text\/event-stream/);

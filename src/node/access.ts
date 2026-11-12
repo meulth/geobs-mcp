@@ -1,4 +1,26 @@
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, errors, jwtVerify } from "jose";
+
+// Fixed vocabulary for operator diagnostics. A reason never carries a claim
+// value, identity, token fragment, key URL or library message.
+export type AccessRejection = "missing" | "malformed" | "keys_unavailable" | "unknown_key" | "signature" |
+  "issuer" | "audience" | "expired" | "not_yet_valid" | "lifetime" | "token_type" | "identity" | "claims";
+export type AccessDecision = { ok: true } | { ok: false; reason: AccessRejection };
+
+function rejection(error: unknown): AccessRejection {
+  if (error instanceof errors.JWTExpired) return error.claim === "exp" ? "expired" : "lifetime";
+  if (error instanceof errors.JWTClaimValidationFailed) {
+    if (error.claim === "iss") return "issuer";
+    if (error.claim === "aud") return "audience";
+    if (error.reason === "check_failed" && (error.claim === "nbf" || error.claim === "iat")) return "not_yet_valid";
+    return "claims";
+  }
+  if (error instanceof errors.JWKSNoMatchingKey) return "unknown_key";
+  if (error instanceof errors.JWSSignatureVerificationFailed) return "signature";
+  if (error instanceof errors.JWSInvalid || error instanceof errors.JWTInvalid ||
+      error instanceof errors.JOSEAlgNotAllowed || error instanceof errors.JOSENotSupported) return "malformed";
+  // Timeouts, non-200 key responses, invalid key documents and network errors.
+  return "keys_unavailable";
+}
 
 export type AccessConfiguration = {
   issuer: string;
@@ -60,11 +82,18 @@ export function createAccessGuard(config: AccessConfiguration) {
     metadata: { resource: config.resource, authorization_servers: [config.authorizationServer],
       bearer_methods_supported: ["header"], resource_name: "GeoBS MCP" },
     challenge: `Bearer resource_metadata="${resource.origin}${metadataPath}"`,
-    async accepts(assertion: string | undefined): Promise<boolean> {
+    // Distinguishes "no assertion" (the request did not pass the gateway, so
+    // an OAuth challenge is useful) from "assertion refused" (the gateway
+    // already authenticated the caller; another login cannot repair an origin
+    // or provider configuration mismatch).
+    async verify(assertion: string | undefined): Promise<AccessDecision> {
+      if (!assertion) return { ok: false, reason: "missing" };
       // Duplicated headers are joined with commas by Node and fail this shape.
       // Cookies, Authorization and unsigned identity/forwarded headers are never
       // a substitute for this cryptographically verified application assertion.
-      if (!assertion || assertion.length > 12_000 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(assertion)) return false;
+      if (assertion.length > 12_000 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(assertion)) {
+        return { ok: false, reason: "malformed" };
+      }
       try {
         const { payload } = await jwtVerify(assertion, keys, {
           issuer: config.issuer, audience: config.audience, algorithms: ["RS256"], typ: "JWT",
@@ -75,14 +104,20 @@ export function createAccessGuard(config: AccessConfiguration) {
         // The dedicated app AUD is the permission boundary for all five
         // read-only tools. Access enforces OAuth scopes/policies at its edge;
         // it does not promise an OAuth scope claim in the origin assertion.
-        return payload.type === "app" && typeof payload.sub === "string" && payload.sub.length > 0 &&
-          typeof payload.email === "string" && /^[^\s@]+@[^\s@]+$/.test(payload.email) &&
-          typeof payload.iat === "number" && typeof payload.exp === "number" &&
-          payload.exp > payload.iat && payload.exp - payload.iat <= config.maxTokenLifetimeSeconds;
-      } catch {
-        // No JWT, identity, claim value, key URL or library exception is logged.
-        return false;
+        if (payload.type !== "app") return { ok: false, reason: "token_type" };
+        if (typeof payload.sub !== "string" || payload.sub.length === 0 ||
+            typeof payload.email !== "string" || !/^[^\s@]+@[^\s@]+$/.test(payload.email)) return { ok: false, reason: "identity" };
+        if (typeof payload.iat !== "number" || typeof payload.exp !== "number" || payload.exp <= payload.iat ||
+            payload.exp - payload.iat > config.maxTokenLifetimeSeconds) return { ok: false, reason: "lifetime" };
+        return { ok: true };
+      } catch (error) {
+        // No JWT, identity, claim value, key URL or library message leaves
+        // this function; only the fixed reason code does.
+        return { ok: false, reason: rejection(error) };
       }
+    },
+    async accepts(assertion: string | undefined): Promise<boolean> {
+      return (await this.verify(assertion)).ok;
     }
   };
 }

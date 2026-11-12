@@ -108,22 +108,44 @@ describe("signed personal Access assertion", () => {
     expect(keyFetches).toBe(1);
   });
   it.each([
-    { name: "issuer", changes: { iss: "https://other.cloudflareaccess.com" } },
-    { name: "audience", changes: { aud: ["b".repeat(64)] } },
-    { name: "expired", changes: { iat: 1, nbf: 1, exp: 2 } },
-    { name: "not yet valid", changes: { nbf: 4_000_000_000 } },
-    { name: "future issue time", changes: { iat: 4_000_000_000, exp: 4_000_000_300 } },
-    { name: "org session", changes: { type: "org" } },
-    { name: "empty subject", changes: { sub: "" } },
-    { name: "service identity", changes: { email: "" } },
-    { name: "long lifetime", changes: { exp: Math.floor(Date.now() / 1000) + 3600 } }
-  ])("rejects $name", async ({ changes }) => {
+    { name: "issuer", reason: "issuer", changes: { iss: "https://other.cloudflareaccess.com" } },
+    { name: "audience", reason: "audience", changes: { aud: ["b".repeat(64)] } },
+    { name: "expired", reason: "expired", changes: { iat: 1, nbf: 1, exp: 2 } },
+    { name: "not yet valid", reason: "not_yet_valid", changes: { nbf: 4_000_000_000 } },
+    { name: "future issue time", reason: "not_yet_valid", changes: { iat: 4_000_000_000, exp: 4_000_000_300 } },
+    { name: "org session", reason: "token_type", changes: { type: "org" } },
+    { name: "empty subject", reason: "identity", changes: { sub: "" } },
+    { name: "service identity", reason: "identity", changes: { email: "" } },
+    { name: "long lifetime", reason: "lifetime", changes: { exp: Math.floor(Date.now() / 1000) + 3600 } }
+  ])("rejects $name with reason $reason", async ({ changes, reason }) => {
     keys();
-    expect(await createAccessGuard(config).accepts(await token(changes))).toBe(false);
+    const guard = createAccessGuard(config);
+    const signed = await token(changes);
+    expect(await guard.accepts(signed)).toBe(false);
+    expect(await guard.verify(signed)).toEqual({ ok: false, reason });
   });
   it.each(["exp", "iat", "nbf", "sub", "email", "type"])("requires claim %s", async claim => {
     keys();
-    expect(await createAccessGuard(config).accepts(await token({}, [claim]))).toBe(false);
+    const guard = createAccessGuard(config);
+    const signed = await token({}, [claim]);
+    expect(await guard.accepts(signed)).toBe(false);
+    expect(await guard.verify(signed)).toEqual({ ok: false, reason: "claims" });
+  });
+  it("names the refusal without exposing token content", async () => {
+    keys();
+    const guard = createAccessGuard(config);
+    const valid = await token();
+    expect(await guard.verify(valid)).toEqual({ ok: true });
+    expect(await guard.verify(undefined)).toEqual({ ok: false, reason: "missing" });
+    expect(await guard.verify("")).toEqual({ ok: false, reason: "missing" });
+    expect(await guard.verify("oauth:opaque-token")).toEqual({ ok: false, reason: "malformed" });
+    expect(await guard.verify(`${valid}, ${valid}`)).toEqual({ ok: false, reason: "malformed" });
+    expect(await guard.verify(await token({}, [], otherKey))).toEqual({ ok: false, reason: "signature" });
+    expect(await guard.verify(await token({}, [], signingKey, "unknown"))).toEqual({ ok: false, reason: "unknown_key" });
+    expect(await guard.verify(`${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from("{}").toString("base64url")}.x`))
+      .toEqual({ ok: false, reason: "malformed" });
+    keys(false);
+    expect(await createAccessGuard(config).verify(valid)).toEqual({ ok: false, reason: "keys_unavailable" });
   });
   it("rejects forged signatures, unknown key IDs, alg=none, oversized and duplicated assertions", async () => {
     keys();
@@ -175,13 +197,46 @@ describe("OAuth-protected Node HTTP boundary", () => {
     const impersonations: Record<string, string>[] = [
       { authorization: `Bearer ${signed}` },
       { cookie: `CF_Authorization=${signed}` },
-      { "cf-access-authenticated-user-email": "person@example.test", "x-forwarded-user": "synthetic-user" },
-      { "cf-access-jwt-assertion": "forged", "x-forwarded-host": "geo.example.test" }
+      { "cf-access-authenticated-user-email": "person@example.test", "x-forwarded-user": "synthetic-user" }
     ];
     for (const headers of impersonations) {
-      expect((await fetch(`${base}/mcp`, { method: "POST", headers: { ...rpcHeaders, ...headers }, body: rpc })).status).toBe(401);
+      const response = await fetch(`${base}/mcp`, { method: "POST", headers: { ...rpcHeaders, ...headers }, body: rpc });
+      expect(response.status).toBe(401);
+      expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
     }
+    const forged = await fetch(`${base}/mcp`, { method: "POST", body: rpc,
+      headers: { ...rpcHeaders, "cf-access-jwt-assertion": "forged", "x-forwarded-host": "geo.example.test" } });
+    expect(forged.status).toBe(403);
     expect(JSON.stringify(logs)).not.toMatch(/person@example|synthetic-user|eyJ|forged/);
+  });
+  it("answers a refused gateway assertion with 403 and a reason code instead of a new login challenge", async () => {
+    keys();
+    const { base, logs, catalog } = await fixture("/geobs-mcp/v1");
+    const now = Math.floor(Date.now() / 1000);
+    const cases: [string, string][] = [
+      ["lifetime", await token({ exp: now + 86_400 })],
+      ["audience", await token({ aud: ["b".repeat(64)] })],
+      ["signature", await token({}, [], otherKey)],
+      ["token_type", await token({ type: "org" })]
+    ];
+    for (const [reason, assertion] of cases) {
+      logs.length = 0;
+      const response = await fetch(`${base}/geobs-mcp/v1/mcp`, { method: "POST", body: rpc,
+        headers: { ...rpcHeaders, origin: "https://geo.example.test", authorization: "Bearer oauth:opaque", "cf-access-jwt-assertion": assertion } });
+      expect(response.status).toBe(403);
+      // A 401 or challenge here would make clients drop a valid grant and loop through login.
+      expect(response.headers.get("www-authenticate")).toBeNull();
+      expect(response.headers.get("access-control-allow-origin")).toBe("https://geo.example.test");
+      expect(await response.json()).toEqual({ error: "access_assertion_rejected" });
+      expect(logs.filter(event => event.event === "access_denied").map(event => event.reason)).toEqual([reason]);
+      expect(logs.find(event => event.event === "http_request")).toMatchObject({ route: "mcp", status: 403 });
+      expect(JSON.stringify(logs)).not.toMatch(/person@example|synthetic-user|eyJ|oauth:opaque/);
+    }
+    logs.length = 0;
+    expect((await fetch(`${base}/mcp`, { method: "POST", headers: rpcHeaders, body: rpc })).status).toBe(401);
+    expect(logs.filter(event => event.event === "access_denied").map(event => event.reason)).toEqual(["missing"]);
+    expect(catalog.get).not.toHaveBeenCalled();
+    expect(logs.every(event => event.event !== "mcp_tool")).toBe(true);
   });
   it.each(["legacy", "auto"] as const)("retains five tools and cache search for authenticated %s clients", async mode => {
     keys();
@@ -218,6 +273,7 @@ describe("OAuth-protected Node HTTP boundary", () => {
     expect(spec.security).toEqual([{ personalOAuth: [] }]);
     expect(spec.paths["/mcp"]!.post.description).not.toContain("No bearer token");
     expect(spec.paths["/mcp"]!.post.responses["401"]).toBeDefined();
+    expect(spec.paths["/mcp"]!.post.responses["403"]).toBeDefined();
     expect((await fetch(`${base}/mcp`, { method: "OPTIONS", headers: { origin: "https://geo.example.test" } })).status).toBe(204);
     expect((await fetch(`${base}/mcp`, { method: "OPTIONS", headers: { origin: "https://evil.example.test" } })).status).toBe(403);
     expect((await fetch(`${base}/.well-known/oauth-authorization-server`)).status).toBe(404);
