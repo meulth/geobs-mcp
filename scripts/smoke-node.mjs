@@ -9,7 +9,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 
 // Run only against the local compiled artifact, using public-shaped synthetic
 // metadata. No upstream request or real credential is needed for this smoke test.
-const release = resolve(process.argv[2] ?? "dist/node");
+const release = resolve(process.argv.slice(2).find(value => !value.startsWith("--")) ?? "dist/node");
 const prefix = join(tmpdir(), "geobs-bundle-test-");
 const temporary = await mkdtemp(prefix);
 const catalog = join(temporary, "catalog.json");
@@ -17,7 +17,10 @@ const collections = [{ id: "ch.bs.demo_stna", title: "Demo" }];
 await writeFile(catalog, JSON.stringify({ schemaVersion: 1, source: "https://api.geo.bs.ch/ogc/v1/wfs3/collections?f=json", fetchedAt: new Date().toISOString(), collectionCount: 1, collections, contentHash: createHash("sha256").update(JSON.stringify(collections)).digest("hex") }));
 const child = spawn(process.execPath, [join(release, "server.mjs")], {
   cwd: temporary, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-  env: { SystemRoot: process.env.SystemRoot, GEOBS_CATALOG_PATH: catalog, GEOBS_ALLOWED_HOSTS: "127.0.0.1:8080", GEOBS_ALLOWED_ORIGINS: "http://127.0.0.1:8080" }
+  env: { SystemRoot: process.env.SystemRoot, GEOBS_CATALOG_PATH: catalog, GEOBS_ALLOWED_HOSTS: "127.0.0.1:8080", GEOBS_ALLOWED_ORIGINS: "http://127.0.0.1:8080",
+    ...(process.argv.includes("--access") ? { GEOBS_AUTH_MODE: "cloudflare-access", GEOBS_ACCESS_ISSUER: "https://synthetic-team.cloudflareaccess.com",
+      GEOBS_ACCESS_AUDIENCE: "a".repeat(64), GEOBS_OAUTH_RESOURCE: "https://geo.example.test/mcp",
+      GEOBS_OAUTH_AUTHORIZATION_SERVER: "https://geo.example.test" } : {}) }
 });
 let output = "";
 let errors = "";
@@ -43,19 +46,32 @@ try {
     assert.equal(response.status, 200);
     assert.ok((await response.text()).length > 100);
   }
-  const legacy = await fetch("http://127.0.0.1:8080/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
-  assert.match(legacy.headers.get("content-type"), /text\/event-stream/);
-  assert.match(await legacy.text(), /query_features_ogc/);
-  const client = new Client({ name: "bundle-smoke", version: "1" }, { versionNegotiation: { mode: "auto" } });
-  try {
-    await client.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:8080/mcp")));
-    assert.equal(client.getProtocolEra(), "modern");
-    assert.equal((await client.listTools()).tools.length, 5);
-    const result = await client.callTool({ name: "search_datasets_ogc", arguments: { query: "Demo" } });
-    assert.equal(result.structuredContent.resultCount, 1);
-    assert.match(JSON.stringify(result.content), /ch\.bs\.demo_stna/);
-  } finally { await client.close(); }
-  console.log(JSON.stringify({ result: "passed", artifact: release, node: process.versions.node, checks: ["compiled startup", "local health/readiness", "OpenAPI 3.1 and local Swagger assets", "legacy SSE", "modern JSON", "five tools", "catalog search", "text and structuredContent"] }));
+  if (process.argv.includes("--access")) {
+    const response = await fetch("http://127.0.0.1:8080/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get("www-authenticate"), 'Bearer resource_metadata="https://geo.example.test/.well-known/oauth-protected-resource/mcp"');
+    const metadata = await (await fetch("http://127.0.0.1:8080/.well-known/oauth-protected-resource/mcp")).json();
+    assert.equal(metadata.resource, "https://geo.example.test/mcp");
+    assert.deepEqual(metadata.authorization_servers, ["https://geo.example.test"]);
+    assert.deepEqual(spec.security, [{ personalOAuth: [] }]);
+    assert.ok(!output.includes('"mcp_tool"'));
+    console.log(JSON.stringify({ result: "passed", artifact: release, node: process.versions.node,
+      checks: ["compiled Access configuration", "anonymous MCP rejection", "OAuth challenge and public metadata", "local health/readiness", "public OAuth-aware Swagger"] }));
+  } else {
+    const legacy = await fetch("http://127.0.0.1:8080/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+    assert.match(legacy.headers.get("content-type"), /text\/event-stream/);
+    assert.match(await legacy.text(), /query_features_ogc/);
+    const client = new Client({ name: "bundle-smoke", version: "1" }, { versionNegotiation: { mode: "auto" } });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:8080/mcp")));
+      assert.equal(client.getProtocolEra(), "modern");
+      assert.equal((await client.listTools()).tools.length, 5);
+      const result = await client.callTool({ name: "search_datasets_ogc", arguments: { query: "Demo" } });
+      assert.equal(result.structuredContent.resultCount, 1);
+      assert.match(JSON.stringify(result.content), /ch\.bs\.demo_stna/);
+    } finally { await client.close(); }
+    console.log(JSON.stringify({ result: "passed", artifact: release, node: process.versions.node, checks: ["compiled startup", "local health/readiness", "OpenAPI 3.1 and local Swagger assets", "legacy SSE", "modern JSON", "five tools", "catalog search", "text and structuredContent"] }));
+  }
 } finally {
   clearTimeout(deadline);
   const exited = child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : once(child, "exit");

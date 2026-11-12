@@ -31,7 +31,7 @@ function addSchema(schemas: Record<string, Schema>, name: string, schema: Schema
   }
 }
 
-export function buildOpenApi(tools: readonly ToolDocumentation[], basePath: string) {
+export function buildOpenApi(tools: readonly ToolDocumentation[], basePath: string, authenticated = false) {
   const schemas: Record<string, Schema> = {};
   const examples: Record<string, { summary: string; description: string; value: unknown }> = {};
   for (const tool of tools) {
@@ -99,13 +99,16 @@ export function buildOpenApi(tools: readonly ToolDocumentation[], basePath: stri
           description: tools.map(tool => `### ${tool.name}\n${tool.description}`).join("\n\n") +
             "\n\nSend Content-Type: application/json and Accept: application/json, text/event-stream. " +
             "The local Swagger request interceptor enforces Accept (OpenAPI header parameters named Accept are ignored). " +
-            "No bearer token, API-key header or session ID is needed. SSE data frames contain JSON-RPC envelopes; do not JSON.parse the whole event stream. " +
+            (authenticated ? "Personal OAuth is required at the Access gateway. Use the browser's authenticated same-origin Access session or an OAuth access token; never enter the server's upstream API key or an origin JWT. "
+              : "No bearer token, API-key header or session ID is needed. ") +
+            "SSE data frames contain JSON-RPC envelopes; do not JSON.parse the whole event stream. " +
             "Only finite POST exchanges are offered here; use an MCP SDK for protocol negotiation and streaming lifecycle.",
           parameters: [{ name: "MCP-Protocol-Version", in: "header", required: true, schema: { type: "string", const: DOCS_PROTOCOL_VERSION, default: DOCS_PROTOCOL_VERSION }, description: "Legacy stateless version used by these low-level examples; SDK clients can negotiate modern JSON as before." }],
           requestBody: { required: true, content: { "application/json": {
             schema: { oneOf: [...tools.map(tool => ref(`${tool.name}_request`)), ref("ToolsListRequest"), ref("InitializeRequest")] }, examples
           } } },
           responses: {
+            ...(authenticated ? { "401": { description: "Personal authentication required. WWW-Authenticate identifies OAuth protected-resource metadata; complete discovery/login at the public gateway." } } : {}),
             "200": { description: "Tool result (including controlled tool errors), tools/list or initialize result. SSE data frames carry the same JSON-RPC envelopes.", content: {
               "application/json": { schema: { anyOf: [ref("ToolResult"), ref("JsonRpcError"), { type: "object", required: ["jsonrpc", "id", "result"], properties: { jsonrpc: { const: "2.0" }, id, result: { type: "object" } } }] } },
               "text/event-stream": { schema: { type: "string" }, example: 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"<tool output>"}],"isError":false}}\n\n' }
@@ -116,6 +119,9 @@ export function buildOpenApi(tools: readonly ToolDocumentation[], basePath: stri
         }
       }
     },
-    components: { schemas }
+    ...(authenticated ? { security: [{ personalOAuth: [] }] } : {}),
+    components: { schemas, ...(authenticated ? { securitySchemes: { personalOAuth: {
+      type: "http", scheme: "bearer", description: "Opaque OAuth access token accepted by the Access gateway. The origin validates the gateway's signed personal identity; it never accepts this header alone."
+    } } } : {}) }
   };
 }

@@ -1,7 +1,8 @@
 # Node.js runtime and portable release
 
 The Node adapter retains the same five tool registrations, schemas and
-read-only anonymous `/mcp` contract. The existing Worker entry point, KV binding
+read-only `/mcp` contract, with optional personal authentication at a trusted
+Cloudflare Access gateway. The existing Worker entry point, KV binding
 and deployment command remain available. No migration occurs when building.
 
 For a production Docker image and Kubernetes integration guidance, see
@@ -67,7 +68,8 @@ possible. The app does not read a `.env` or credential environment value.
 Incoming forwarded headers are ignored. Absent Origin is allowed for non-browser
 MCP clients; a present unlisted Origin or Host is rejected. Reverse proxies must
 preserve/configure the intended Host and stream responses without buffering.
-No OAuth or browser login is added. `/` is liveness only. Readiness fails when
+Without an explicit auth configuration the Node endpoint remains anonymous.
+For protected operation, see [personal OAuth](oauth.md). `/` is liveness only. Readiness fails when
 the catalog is missing, invalid, corrupt or over 14 days old; it does not claim
 that upstream credentials work.
 HTTP bodies are capped at 1,000,000 bytes; headers at 16 KiB. Logs are JSON lines
@@ -134,7 +136,8 @@ These are operator instructions, not an installer or deployment command.
 
 Rollback means restoring the previous compatible release/config reference and
 restarting; preserve its matching credentials and valid catalog. For a failed
-client cutover, select the existing Worker connection again. Never delete the
+client cutover, an old anonymous release or Worker is not an authenticated
+fallback: keep the public route closed until protection is restored. Never delete the
 old Worker or KV merely because the Node build passed. Source and application
 release files must be available for recovery, rather than just a Git hash.
 Back up the release, effective configuration/units, protected required

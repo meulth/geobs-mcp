@@ -1,6 +1,7 @@
 import { open } from "node:fs/promises";
 import { isIP } from "node:net";
 import { isAbsolute, join } from "node:path";
+import { accessConfiguration } from "./access";
 
 export const NODE_VERSION = "24.20.0";
 export const APP_PORT = 8080;
@@ -37,7 +38,7 @@ export function nodeConfig(env: ConfigEnvironment) {
   const concurrency = env.GEOBS_MAX_CONCURRENT_REQUESTS ?? String(DEFAULT_MAX_CONCURRENT_REQUESTS);
   if (!/^[1-9][0-9]{0,3}$/.test(concurrency)) throw new Error("GEOBS_MAX_CONCURRENT_REQUESTS must be an integer between 1 and 9999.");
   return { hosts, origins, catalogPath, bindAddress, publicBasePath: publicBasePath(env.GEOBS_PUBLIC_BASE_PATH),
-    maxConcurrentRequests: Number(concurrency) };
+    maxConcurrentRequests: Number(concurrency), access: accessConfiguration(env) };
 }
 
 export async function readApiKey(env: ConfigEnvironment): Promise<string | undefined> {

@@ -10,9 +10,10 @@ import { getToolDocumentation } from "../mcp/register";
 import { DEFAULT_MAX_CONCURRENT_REQUESTS, publicBasePath } from "./config";
 import { buildOpenApi } from "./openapi";
 import { documentationResponse } from "./docs";
+import { createAccessGuard, type AccessConfiguration } from "./access";
 
 export const MAX_REQUEST_BYTES = 1_000_000;
-type Options = { hosts: string[]; origins: string[]; publicBasePath?: string; apiKey?: string; catalog: CatalogReader; log?: TelemetrySink; maxConcurrentRequests?: number };
+type Options = { hosts: string[]; origins: string[]; publicBasePath?: string; apiKey?: string; catalog: CatalogReader; log?: TelemetrySink; maxConcurrentRequests?: number; access?: AccessConfiguration };
 
 function json(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } });
@@ -20,8 +21,9 @@ function json(value: unknown, status = 200) {
 
 export function createNodeServer(options: Options) {
   const basePath = publicBasePath(options.publicBasePath);
+  const access = options.access ? createAccessGuard(options.access) : undefined;
   // Metadata only: creating a server registers schemas but executes no tools.
-  const spec = buildOpenApi(getToolDocumentation(createGeoBsServer({}, options.catalog)), basePath);
+  const spec = buildOpenApi(getToolDocumentation(createGeoBsServer({}, options.catalog)), basePath, Boolean(access));
   const controllers = new Set<AbortController>();
   const maxConcurrent = options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS;
   let activeMcp = 0;
@@ -60,7 +62,7 @@ export function createNodeServer(options: Options) {
       }
       const method = incoming.method ?? "GET";
       if (path === "/mcp" && method !== "OPTIONS") {
-        // Checked before the body is buffered, so rejected requests cost nothing.
+        // Bound verification work and reject before buffering the request body.
         if (activeMcp >= maxConcurrent) {
           outgoing.writeHead(503, { "retry-after": "1", "cache-control": "no-store", "content-type": "application/json", connection: "close" });
           outgoing.end('{"error":"overloaded"}');
@@ -68,6 +70,18 @@ export function createNodeServer(options: Options) {
         }
         activeMcp++;
         countedMcp = true;
+        if (access && !await access.accepts(headers.get("cf-access-jwt-assertion") ?? undefined)) {
+          const denied = await observeHttp(new Request(url, { method, signal: abort.signal }),
+            async () => json({ error: "unauthorized" }, 401), options.log);
+          outgoing.writeHead(denied.status, {
+            "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff",
+            "www-authenticate": access.challenge, connection: "close",
+            ...(origin ? { "access-control-allow-origin": origin, vary: "Origin",
+              "access-control-expose-headers": "WWW-Authenticate" } : {})
+          });
+          outgoing.end(await denied.text());
+          return;
+        }
       }
       const parts: Buffer[] = [];
       let bytes = 0;
@@ -85,12 +99,17 @@ export function createNodeServer(options: Options) {
       if (path === "/mcp") internalUrl.pathname = path;
       const request = new Request(internalUrl, { method, headers, body, signal: abort.signal });
       const response = await observeHttp(request, async () => {
+        if (access && (url.pathname === access.metadataPath || url.pathname === "/.well-known/oauth-protected-resource")) {
+          return method === "GET" || method === "HEAD"
+            ? method === "HEAD" ? new Response(null, { headers: { "content-type": "application/json" } }) : json(access.metadata)
+            : json({ error: "method_not_allowed" }, 405);
+        }
         if (method === "GET" || method === "HEAD") {
           // A stripping gateway forwards the public prefix root as '/'.
           const docs = path === "/openapi.json" ? json(spec) : documentationResponse(path === "/" && basePath ? "/docs" : path, basePath);
           if (docs) return method === "HEAD" ? new Response(null, { status: docs.status, headers: docs.headers }) : docs;
         }
-        if (path === "/" && method === "GET") return json({ name: "geobs-mcp", version: "0.1.0", status: "ok", mcp: "/mcp", authentication: "none", docs: `${basePath}/docs`, openapi: `${basePath}/openapi.json` });
+        if (path === "/" && method === "GET") return json({ name: "geobs-mcp", version: "0.1.0", status: "ok", mcp: "/mcp", authentication: access ? "oauth" : "none", docs: `${basePath}/docs`, openapi: `${basePath}/openapi.json` });
         if (path === "/health/live" && method === "GET") return json({ status: "ok" });
         if (path === "/health/ready" && method === "GET") {
           try { await options.catalog.get(); return json({ status: "ok" }); }
@@ -111,7 +130,8 @@ export function createNodeServer(options: Options) {
         response.headers.set("access-control-allow-origin", origin);
         response.headers.set("vary", "Origin");
         response.headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
-        response.headers.set("access-control-allow-headers", "Content-Type, Accept, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id");
+        response.headers.set("access-control-allow-headers", "Content-Type, Accept, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id");
+        response.headers.set("access-control-expose-headers", "WWW-Authenticate");
       }
       if (response.headers.get("content-type")?.includes("text/event-stream")) response.headers.set("x-accel-buffering", "no");
       const responseHeaders: Record<string, string> = {};

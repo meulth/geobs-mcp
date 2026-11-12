@@ -18,9 +18,15 @@ The server exposes five read-only tools. It uses:
 - Streamable HTTP at `/mcp`
 - a local OGC metadata snapshot for Node.js, or Workers KV for the Worker;
   refresh Wednesday at 03:00 Europe/Zurich
-- no Durable Objects, SQL database, queue, OAuth or LLM
+- optional Node-origin verification for personal OAuth through Cloudflare Access
+- no Durable Objects, SQL database, queue, built-in identity provider or LLM
 
 The design follows the current [Cloudflare stateless MCP handler documentation](https://developers.cloudflare.com/agents/model-context-protocol/apis/handler-api/), the [MCP transport specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports), and the official OpenAI guidance for [building](https://developers.openai.com/plugins/build/mcp-server) and [connecting](https://developers.openai.com/plugins/deploy/connect-chatgpt) MCP-backed plugins.
+
+For a private Node deployment, [personal OAuth setup](docs/oauth.md) documents
+Cloudflare Access Managed OAuth, origin token verification and client acceptance.
+This is opt-in; the Worker entry point is unchanged. A local test pass does not
+establish an authenticated connection in ChatGPT or Claude.
 
 ## Tools
 
