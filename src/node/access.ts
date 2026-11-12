@@ -111,11 +111,16 @@ export function createAccessGuard(config: AccessConfiguration) {
         return { ok: false, reason: "malformed" };
       }
       try {
-        const { payload } = await jwtVerify(assertion, keys, {
-          issuer: config.issuer, audience: config.audience, algorithms: ["RS256"], typ: "JWT",
+        // RFC 7519 makes the JOSE typ header optional. Access assertions must
+        // still pass signature, dedicated app audience, identity and time checks.
+        const { payload, protectedHeader } = await jwtVerify(assertion, keys, {
+          issuer: config.issuer, audience: config.audience, algorithms: ["RS256"],
           requiredClaims: ["exp", "iat", "nbf", "sub", "email", "type"],
           maxTokenAge: config.maxTokenLifetimeSeconds, clockTolerance: 5
         });
+        if (protectedHeader.typ !== undefined && !/^(application\/)?jwt$/i.test(protectedHeader.typ)) {
+          return { ok: false, reason: "claims", claim: "typ", claim_issue: "invalid" };
+        }
         // Org and non-identity/service tokens do not grant personal MCP access.
         // The dedicated app AUD is the permission boundary for all five
         // read-only tools. Access enforces OAuth scopes/policies at its edge;

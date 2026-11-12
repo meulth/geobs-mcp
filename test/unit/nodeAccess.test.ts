@@ -45,12 +45,12 @@ function keys(available = true) {
   });
 }
 
-async function token(changes: JWTPayload = {}, omit: string[] = [], key = signingKey, kid = "current") {
+async function token(changes: JWTPayload = {}, omit: string[] = [], key = signingKey, kid = "current", header: { typ?: string } = { typ: "JWT" }) {
   const now = Math.floor(Date.now() / 1000);
   const payload: JWTPayload = { iss: issuer, aud: [audience], sub: "synthetic-user", email: "person@example.test",
     type: "app", iat: now, nbf: now, exp: now + 300, ...changes };
   for (const name of omit) delete payload[name];
-  return new SignJWT(payload).setProtectedHeader({ alg: "RS256", kid, typ: "JWT" }).sign(key);
+  return new SignJWT(payload).setProtectedHeader({ alg: "RS256", kid, ...header }).sign(key);
 }
 
 async function fixture(basePath = "") {
@@ -106,6 +106,26 @@ describe("signed personal Access assertion", () => {
     expect(await guard.accepts(await token())).toBe(true);
     expect(await guard.accepts(await token())).toBe(true);
     expect(keyFetches).toBe(1);
+  });
+  it.each([{}, { typ: "JWT" }, { typ: "jwt" }, { typ: "application/jwt" }])("accepts an optional JWT type header %j", async header => {
+    keys();
+    expect(await createAccessGuard(config).verify(await token({}, [], signingKey, "current", header))).toEqual({ ok: true });
+  });
+  it.each(["at+jwt", "org", "", " JWT", "application/jwt;other"])("rejects an explicit unexpected type header %j", async typ => {
+    keys();
+    expect(await createAccessGuard(config).verify(await token({}, [], signingKey, "current", { typ })))
+      .toEqual({ ok: false, reason: "claims", claim: "typ", claim_issue: "invalid" });
+  });
+  it("keeps signature, audience, identity and required time claims mandatory without a type header", async () => {
+    keys();
+    const guard = createAccessGuard(config);
+    const noType = (changes: JWTPayload = {}, omit: string[] = [], key = signingKey) => token(changes, omit, key, "current", {});
+    for (const signed of [await noType({}, [], otherKey), await noType({ aud: ["b".repeat(64)] }),
+      await noType({ iss: "https://other.cloudflareaccess.com" }), await noType({ type: "org" }),
+      await noType({ sub: "" }), await noType({ email: "" }), await noType({ nbf: 4_000_000_000 }),
+      await noType({ exp: 1 }), ...await Promise.all(["exp", "iat", "nbf", "sub", "email", "type"].map(claim => noType({}, [claim])))]) {
+      expect((await guard.verify(signed)).ok).toBe(false);
+    }
   });
   it.each([
     { name: "issuer", reason: "issuer", changes: { iss: "https://other.cloudflareaccess.com" } },
@@ -261,7 +281,7 @@ describe("OAuth-protected Node HTTP boundary", () => {
   it.each(["legacy", "auto"] as const)("retains five tools and cache search for authenticated %s clients", async mode => {
     keys();
     const { base, logs } = await fixture();
-    const signed = await token();
+    const signed = await token({}, [], signingKey, "current", {});
     const client = new Client({ name: "synthetic-oauth-test", version: "1" }, { versionNegotiation: { mode } });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
       requestInit: { headers: { "cf-access-jwt-assertion": signed } }

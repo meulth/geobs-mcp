@@ -114,6 +114,11 @@ failures also record an allowlisted `claim` name and `claim_issue` (`missing`,
 `invalid` or `check_failed`). These fields describe the failure without exposing
 the assertion or the validation library's error message/payload.
 
+The JOSE `typ` header is optional under RFC 7519. An otherwise valid Access
+assertion without it is accepted; if present, it must identify a JWT (`JWT` or
+`application/jwt`, case-insensitive). This does not make payload `type`, `nbf`,
+the personal identity, signature, issuer, application AUD or lifetime optional.
+
 | `reason` | Meaning and usual correction |
 | --- | --- |
 | `missing` | No `Cf-Access-Jwt-Assertion`. The route is not covered by the Access application, or the origin was reached directly. |
@@ -184,6 +189,7 @@ restore anonymous public tools after an auth failure.
 - [Cloudflare Managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/)
 - [Access JWT verification](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 - [Access application token claims](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/)
+- [RFC 7519: optional JWT type header](https://www.rfc-editor.org/rfc/rfc7519.html#section-5.1)
 - [Access sessions and revocation](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/)
 - [ChatGPT MCP authentication](https://developers.openai.com/plugins/build/auth)
 - [Claude remote MCP connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
