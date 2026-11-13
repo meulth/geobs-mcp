@@ -47,8 +47,43 @@ unneeded localhost/loopback registrations. Configure a short OAuth access-token
 lifetime (for example five minutes) and an application/policy session duration
 of at most fifteen minutes. These are two separate settings: the session
 duration, not the OAuth access-token lifetime, determines the lifetime of the
-assertion that Node verifies. Longer refresh grants need an explicit operator
-decision. Re-read the resulting configuration rather than assuming defaults.
+assertion that Node verifies. The OAuth grant session is a third, independent
+duration: it controls how long the client can refresh without another login.
+Re-read the resulting configuration rather than assuming defaults.
+
+### Stay signed in for twenty hours
+
+For a twenty-hour client login, configure Managed OAuth on the existing Access
+application with these settings:
+
+```json
+{
+  "oauth_configuration": {
+    "enabled": true,
+    "grant": {
+      "session_duration": "20h",
+      "access_token_lifetime": "5m"
+    }
+  }
+}
+```
+
+This is the relevant part of the application configuration, not a complete
+replacement request. Read the existing application first, preserve its other
+settings, redirect URI restrictions and reusable policy references, then update
+only `oauth_configuration.grant.session_duration`. Keep the application/policy
+session at fifteen minutes and Node's maximum at `900` seconds. A twenty-hour
+refresh grant does not require a twenty-hour JWT or a relaxed origin check.
+
+A client that supports refresh tokens renews its five-minute access tokens
+automatically within the twenty-hour grant. Access re-evaluates policies on each
+refresh. Sign in again to obtain a new grant; already-issued grants are not
+promised a retroactive extension. Disconnected clients, failed refreshes or
+revoked permission can require an earlier login. This changes no MCP endpoint
+and adds no application-side session storage or background refresh process.
+
+See [Cloudflare Managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/)
+for the independent access-token and grant-session settings.
 
 Example non-secret Node settings:
 
