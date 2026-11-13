@@ -18,7 +18,7 @@ const docker = (...args) => execFileSync("docker", args, {
   encoding: "utf8", timeout: 30_000, windowsHide: true,
   stdio: ["ignore", "pipe", "pipe"]
 }).trim();
-const toolNames = ["search_api_v2", "search_datasets_ogc", "get_dataset_stac", "query_features_ogc", "get_property_info"].sort();
+const toolNames = ["search_api_v2", "search_datasets_ogc", "get_dataset_stac", "query_features_ogc", "get_property_info", "get_oereb_extract", "get_oereb_pdf_link"].sort();
 // Native fetch does not reliably forward a caller-supplied Host. This local
 // HTTP transport preserves it and buffers only our small finite test results.
 const httpFetch = (input, init = {}) => new Promise((resolve, reject) => {
@@ -163,7 +163,7 @@ try {
   assert.equal(docker("inspect", "--format", "{{.State.ExitCode}}", name), "0");
   console.log(JSON.stringify({ result: "passed", image, node: runtime.node,
     checks: ["published port / pod listener", "non-root", "read-only filesystem",
-      "no package managers", "missing catalog readiness", "valid catalog readiness", "five tools", "modern JSON", "legacy SSE",
+      "no package managers", "missing catalog readiness", "valid catalog readiness", "seven tools", "modern JSON", "legacy SSE",
       "synthetic catalog search", "Host/Origin rejection", "persistent catalog after restart",
       "MCP without network", "local Swagger/OpenAPI without network", "catalog ensure without network or writes", "SIGTERM exit 0"] }));
 } catch (error) {

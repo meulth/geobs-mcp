@@ -40,7 +40,7 @@ try {
   }
   const spec = await (await fetch("http://127.0.0.1:8080/openapi.json")).json();
   assert.equal(spec.openapi, "3.1.0");
-  assert.equal(Object.keys(spec.paths["/mcp"].post.requestBody.content["application/json"].examples).length, 7);
+  assert.equal(Object.keys(spec.paths["/mcp"].post.requestBody.content["application/json"].examples).length, 9);
   for (const asset of ["swagger-ui-bundle.js", "swagger-ui.css", "swagger-initializer.js"]) {
     const response = await fetch(`http://127.0.0.1:8080/docs/${asset}`);
     assert.equal(response.status, 200);
@@ -70,12 +70,12 @@ try {
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:8080/mcp")));
       assert.equal(client.getProtocolEra(), "modern");
-      assert.equal((await client.listTools()).tools.length, 5);
+      assert.equal((await client.listTools()).tools.length, 7);
       const result = await client.callTool({ name: "search_datasets_ogc", arguments: { query: "Demo" } });
       assert.equal(result.structuredContent.resultCount, 1);
       assert.match(JSON.stringify(result.content), /ch\.bs\.demo_stna/);
     } finally { await client.close(); }
-    console.log(JSON.stringify({ result: "passed", artifact: release, node: process.versions.node, checks: ["compiled startup", "local health/readiness", "OpenAPI 3.1 and local Swagger assets", "legacy SSE", "modern JSON", "five tools", "catalog search", "text and structuredContent"] }));
+    console.log(JSON.stringify({ result: "passed", artifact: release, node: process.versions.node, checks: ["compiled startup", "local health/readiness", "OpenAPI 3.1 and local Swagger assets", "legacy SSE", "modern JSON", "seven tools", "catalog search", "text and structuredContent"] }));
   }
 } finally {
   clearTimeout(deadline);

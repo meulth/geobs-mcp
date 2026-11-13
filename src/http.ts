@@ -1,4 +1,4 @@
-import { GEOBS_ORIGIN, LIMITS } from "./config";
+import { GEOBS_ORIGIN, OEREB_ORIGIN, LIMITS } from "./config";
 import { GeoBsError, type GeoBsErrorCode } from "./errors";
 import { elapsed, recordEvent, upstreamName } from "./telemetry";
 
@@ -8,13 +8,14 @@ export type FetchLike = (
 ) => Promise<Response>;
 
 export interface JsonRequestOptions {
+  service?: "oereb";
   fetcher?: FetchLike;
   headers?: HeadersInit;
   timeoutMs?: number;
   maxBytes?: number;
   notFoundCode?: Extract<
     GeoBsErrorCode,
-    "DATASET_NOT_FOUND" | "COLLECTION_NOT_FOUND"
+    "DATASET_NOT_FOUND" | "COLLECTION_NOT_FOUND" | "NO_RESULTS"
   >;
 }
 
@@ -24,18 +25,19 @@ export interface JsonResponse<T> {
   status: number;
 }
 
-function assertAllowedUrl(url: URL): void {
-  if (url.origin !== GEOBS_ORIGIN || url.protocol !== "https:") {
+function assertAllowedUrl(url: URL, service?: JsonRequestOptions["service"]): void {
+  const origin = service === "oereb" ? OEREB_ORIGIN : GEOBS_ORIGIN;
+  if (url.origin !== origin || url.protocol !== "https:" || url.username || url.password) {
     throw new GeoBsError(
       "INVALID_INPUT",
-      "Only the configured GeoBS API origin is allowed."
+      "Only the configured API origin without URL credentials is allowed."
     );
   }
 }
 
-function statusError(status: number, notFoundCode?: JsonRequestOptions["notFoundCode"]): GeoBsError {
+function statusError(status: number, notFoundCode?: JsonRequestOptions["notFoundCode"], service = "GeoBS"): GeoBsError {
   if (status === 404 && notFoundCode) {
-    const message =
+    const message = notFoundCode === "NO_RESULTS" ? "No OEREB result was found for the supplied input." :
       notFoundCode === "DATASET_NOT_FOUND"
         ? "The requested GeoBS dataset was not found."
         : "The requested OGC feature collection was not found.";
@@ -44,33 +46,33 @@ function statusError(status: number, notFoundCode?: JsonRequestOptions["notFound
   if (status === 429) {
     return new GeoBsError(
       "RATE_LIMIT",
-      "The GeoBS API rate limit was reached. Try again later.",
+      `The ${service} API rate limit was reached. Try again later.`,
       true
     );
   }
   if (status === 401 || status === 403) {
     return new GeoBsError(
       "UPSTREAM_AUTH_ERROR",
-      "The GeoBS API rejected the server-side API key."
+      service === "OEREB" ? "The OEREB API refused access." : "The GeoBS API rejected the server-side API key."
     );
   }
   if (status >= 500) {
     return new GeoBsError(
       "UPSTREAM_UNAVAILABLE",
-      "The GeoBS API is currently unavailable.",
+      `The ${service} API is currently unavailable.`,
       true
     );
   }
   return new GeoBsError(
     "UPSTREAM_REJECTED",
-    `The GeoBS API rejected the request (HTTP ${status}).`
+    `The ${service} API rejected the request (HTTP ${status}).`
   );
 }
 
-async function readBoundedBody(response: Response, maxBytes: number): Promise<Uint8Array> {
+async function readBoundedBody(response: Response, maxBytes: number, service: string): Promise<Uint8Array> {
   const tooLarge = () => new GeoBsError(
     "RESPONSE_TOO_LARGE",
-    "The GeoBS API response exceeded the configured safety limit."
+    `The ${service} API response exceeded the configured safety limit.`
   );
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
@@ -111,7 +113,11 @@ export async function fetchJson<T>(
   options: JsonRequestOptions = {}
 ): Promise<JsonResponse<T>> {
   const parsedUrl = typeof url === "string" ? new URL(url) : url;
-  assertAllowedUrl(parsedUrl);
+  assertAllowedUrl(parsedUrl, options.service);
+  const service = options.service === "oereb" ? "OEREB" : "GeoBS";
+  if (options.service === "oereb" && options.headers) {
+    throw new GeoBsError("INVALID_INPUT", "Custom headers are not accepted for the key-free OEREB API.");
+  }
 
   const start = performance.now();
   let status: number | undefined;
@@ -139,10 +145,19 @@ export async function fetchJson<T>(
 
     status = response.status;
     if (!response.ok) {
-      throw statusError(response.status, options.notFoundCode);
+      throw statusError(response.status, options.notFoundCode, service);
+    }
+    if (options.service === "oereb") {
+      if (response.status === 204) {
+        throw new GeoBsError("NO_RESULTS", "No OEREB result was found for the supplied input.");
+      }
+      if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+        await response.body?.cancel();
+        throw new GeoBsError("INVALID_UPSTREAM_RESPONSE", "The OEREB API did not return JSON.");
+      }
     }
 
-    const body = await readBoundedBody(response, options.maxBytes ?? LIMITS.maxJsonBytes);
+    const body = await readBoundedBody(response, options.maxBytes ?? LIMITS.maxJsonBytes, service);
     responseBytes = body.byteLength;
 
     try {
@@ -156,7 +171,7 @@ export async function fetchJson<T>(
       if (error instanceof GeoBsError) throw error;
       throw new GeoBsError(
         "INVALID_UPSTREAM_RESPONSE",
-        "The GeoBS API returned invalid JSON."
+        `The ${service} API returned invalid JSON.`
       );
     }
   } catch (error) {
@@ -168,20 +183,20 @@ export async function fetchJson<T>(
     ) {
       failure = new GeoBsError(
         "TIMEOUT",
-        "The GeoBS API request timed out.",
+        `The ${service} API request timed out.`,
         true
       );
     } else {
       failure = new GeoBsError(
         "UPSTREAM_UNAVAILABLE",
-        "The GeoBS API could not be reached.",
+        `The ${service} API could not be reached.`,
         true
       );
     }
     throw failure;
   } finally {
     clearTimeout(timeout);
-    recordEvent({ event: "geobs_upstream", upstream: upstreamName(parsedUrl.pathname),
+    recordEvent({ event: "geobs_upstream", upstream: options.service === "oereb" ? "oereb" : upstreamName(parsedUrl.pathname),
       status, response_bytes: responseBytes, outcome: failure ? "error" : "success",
       error_code: failure?.code, duration_ms: elapsed(start) });
   }

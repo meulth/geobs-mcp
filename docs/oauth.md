@@ -27,7 +27,7 @@ authenticate a direct origin request. Client-supplied key/issuer URLs are not
 used for discovery or verification.
 
 Use a dedicated Access application for this MCP resource. Its AUD grants the
-five existing read-only tools; it must not be shared with unrelated services.
+seven read-only tools; it must not be shared with unrelated services.
 OAuth scope checks belong to Access's authorization boundary. Access does not
 guarantee a `scope` claim in the origin assertion, so this server does not
 invent per-tool scope enforcement from that assertion. Check actual published
@@ -146,7 +146,7 @@ that issuer/resource identifiers match exactly. Do not label a raw HTTP or
 SDK check as a successful personal ChatGPT/Claude login.
 
 Test each client with an allowed person, a denied person and no token. Check
-discovery, login, PKCE, registration restrictions, five-tool discovery, a cached
+discovery, login, PKCE, registration restrictions, seven-tool discovery, a cached
 metadata query, streaming, token expiry/refresh and removal of permission.
 Test wrong issuer/audience/signature, future or expired tokens, injected
 identity headers, wrong Hosts/Origins and every alternate origin path.

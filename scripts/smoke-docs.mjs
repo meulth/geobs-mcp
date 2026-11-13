@@ -72,7 +72,7 @@ try {
       await page.locator(".opblock-summary").click();
       await page.getByRole("button", { name: "Try it out" }).click();
       const selector = page.locator("select").filter({ has: page.locator('option[value="search_datasets_ogc"]') });
-      for (const name of ["search_api_v2", "get_dataset_stac", "query_features_ogc", "get_property_info", "search_datasets_ogc"]) {
+      for (const name of ["search_api_v2", "get_dataset_stac", "query_features_ogc", "get_property_info", "search_datasets_ogc", "get_oereb_extract", "get_oereb_pdf_link"]) {
         assert.equal(await selector.locator(`option[value="${name}"]`).count(), 1);
       }
       await selector.selectOption("search_datasets_ogc");
@@ -105,7 +105,7 @@ try {
         await mkdir(directory, { recursive: true });
         await page.screenshot({ path: join(directory, `docs-${mode}.png`), fullPage: true });
       }
-      console.log(JSON.stringify({ result: "passed", mode, checks: ["local Swagger assets", "five documented tools", "Try it out", "JSON-RPC headers", "raw SSE result", "public prefix", "no external browser requests"] }));
+      console.log(JSON.stringify({ result: "passed", mode, checks: ["local Swagger assets", "seven documented tools", "Try it out", "JSON-RPC headers", "raw SSE result", "public prefix", "no external browser requests"] }));
     } finally {
       clearTimeout(deadline);
       await page.close();

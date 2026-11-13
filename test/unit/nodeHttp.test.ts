@@ -8,7 +8,7 @@ import { nodeConfig } from "../../src/node/config";
 import worker from "../../src/index";
 
 const apps: ReturnType<typeof createNodeServer>[] = [];
-const toolNames = ["search_api_v2", "search_datasets_ogc", "get_dataset_stac", "query_features_ogc", "get_property_info"].sort();
+const toolNames = ["search_api_v2", "search_datasets_ogc", "get_dataset_stac", "query_features_ogc", "get_property_info", "get_oereb_extract", "get_oereb_pdf_link"].sort();
 async function fixture(reader?: CatalogReader) {
   const snapshot = await createCatalogSnapshot([{ id: "ch.bs.strassennamen_stna", title: "Strassennamen" }]);
   const catalog = reader ?? { get: vi.fn(async () => snapshot) };
@@ -37,7 +37,7 @@ function raw(port: number, path: string, headers: Record<string, string>, body?:
 }
 
 describe("Node MCP adapter over real loopback HTTP", () => {
-  it.each(["legacy", "auto"] as const)("serves all five tools and full text/structured output with %s negotiation", async mode => {
+  it.each(["legacy", "auto"] as const)("serves all seven tools and full text/structured output with %s negotiation", async mode => {
     const { base, logs } = await fixture();
     const types: string[] = [];
     const localFetch: typeof fetch = async (input, init) => {

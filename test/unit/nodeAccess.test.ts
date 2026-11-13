@@ -278,7 +278,7 @@ describe("OAuth-protected Node HTTP boundary", () => {
     expect(catalog.get).not.toHaveBeenCalled();
     expect(logs.every(event => event.event !== "mcp_tool")).toBe(true);
   });
-  it.each(["legacy", "auto"] as const)("retains five tools and cache search for authenticated %s clients", async mode => {
+  it.each(["legacy", "auto"] as const)("retains seven tools and cache search for authenticated %s clients", async mode => {
     keys();
     const { base, logs } = await fixture();
     const signed = await token({}, [], signingKey, "current", {});
@@ -288,7 +288,7 @@ describe("OAuth-protected Node HTTP boundary", () => {
     }));
     try {
       expect((await client.listTools()).tools.map(t => t.name).sort()).toEqual([
-        "get_dataset_stac", "get_property_info", "query_features_ogc", "search_api_v2", "search_datasets_ogc"
+        "get_dataset_stac", "get_oereb_extract", "get_oereb_pdf_link", "get_property_info", "query_features_ogc", "search_api_v2", "search_datasets_ogc"
       ]);
       expect((await client.callTool({ name: "search_datasets_ogc", arguments: { query: "Strassennamen" } })).isError).not.toBe(true);
       expect(logs.some(event => event.event === "mcp_tool")).toBe(true);

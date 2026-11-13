@@ -1,6 +1,6 @@
 # Standalone Node.js container
 
-The production image runs the existing `src/node/` adapter and the same five
+The production image runs the existing `src/node/` adapter and the same seven
 read-only MCP tools. It needs Node.js, the local OGC catalog and HTTPS access to
 `api.geo.bs.ch`; no Cloudflare runtime, account, KV, Worker or tunnel is required.
 The existing stateless MCP handler library is bundled with the application.
@@ -34,7 +34,7 @@ also excludes local/private files from the build context.
 The opt-in `test:container` command starts a uniquely named temporary container
 with synthetic metadata and no API key. It checks a host-published port, the
 non-root runtime, read-only root filesystem, liveness, readiness with/without a
-catalog, all five tool names, modern JSON and legacy SSE, a real cached search,
+catalog, all seven tool names, modern JSON and legacy SSE, a real cached search,
 Host/Origin rejection, restart persistence and graceful SIGTERM. It then
 disconnects the container's network and verifies local health and MCP again.
 It also reuses the valid catalog through the compiled `refresh.mjs --ensure`
@@ -82,7 +82,7 @@ curl --fail http://127.0.0.1:8080/health/ready
 an MCP client to exercise it. `/health/live` is process liveness; readiness
 returns 503 for a missing, invalid or expired catalog. Neither validates the
 upstream API key. The missing-key tools return the existing controlled error;
-all five tools are still registered. No endpoint or schema is renamed.
+all seven tools are still registered. No endpoint or schema is renamed.
 
 ## Configuration and credentials
 

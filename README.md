@@ -3,14 +3,14 @@
 Open-source MCP server for accessing Basel-Stadt geospatial data via STAC, OGC API Features and GeoBS APIs.
 
 `geobs-mcp` is a read-only Remote MCP server with a standalone Node.js container
-runtime and a retained Cloudflare Workers entry point. It exposes five focused
+runtime and a retained Cloudflare Workers entry point. It exposes seven focused
 geo tools through the existing stateless MCP handler, with a weekly OGC metadata
 catalog stored locally for Node.js or in Workers KV for the Worker. It supports
-the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2 and Grundstückinfo.
+the public GeoBS STAC catalog, OGC API Features/WFS3, Search API v2, Grundstückinfo and the key-free Basel-Stadt OEREB API.
 
 ## Status
 
-The server exposes five read-only tools. It uses:
+The server exposes seven read-only tools. It uses:
 
 - TypeScript with Node.js or Cloudflare Workers
 - the stable MCP TypeScript SDK v2 via `@modelcontextprotocol/server`
@@ -37,6 +37,10 @@ establish an authenticated connection in ChatGPT or Claude.
 | `query_features_ogc` | OGC API Features | Run bounded bbox or point/radius feature queries with controlled exact filters. |
 | `get_property_info` | WFS3 + Grundstückinfo | Resolve a point to an E-GRID, then return parcel, building and land-cover information. |
 | `search_datasets_ogc` | Cached WFS3 catalog | Search topics, titles, descriptions and IDs; return exact layer IDs, inferred four-character STAC product IDs, match reasons and catalog age. |
+| `get_oereb_extract` | OEREB JSON + EGRID lookup | Return an official public-law restrictions extract for one E-GRID, optionally resolving an EPSG:2056 point first; ask for selection when several properties match. |
+| `get_oereb_pdf_link` | Official OEREB PDF URL | On explicit PDF request, provide an extended official download link; no PDF download or generation in the MCP server. |
+
+See [OEREB extracts and property selection](docs/oereb.md) for inputs, extended PDF links and format/coverage limits.
 
 All tools advertise read-only, non-destructive, idempotent and closed-world annotations. Their inputs and structured outputs have JSON schemas.
 
@@ -45,7 +49,7 @@ All tools advertise read-only, non-destructive, idempotent and closed-world anno
 The tool renames from the previous interface are `search_location` → `search_api_v2`, `get_dataset` →
 `get_dataset_stac`, `search_feature_collections` → `search_datasets_ogc`, and
 `query_features` → `query_features_ogc`. `get_property_info` is unchanged.
-There are no aliases for old names; the tool count remains five. Refresh client
+There are no aliases for old names; the tool count is now seven. Refresh client
 tool lists after deployment and update integrations that call the old names.
 
 `search_datasets_ogc` replaces `search_datasets`. Pass a result's `id` to
@@ -119,7 +123,7 @@ Opening `/mcp` in a browser is not an MCP test; the endpoint expects protocol re
 ## Test with MCP Inspector
 
 The Node.js runtime also serves **Swagger UI at `/docs`** and generated
-**OpenAPI 3.1 at `/openapi.json`**. All five tools have JSON-RPC examples and
+**OpenAPI 3.1 at `/openapi.json`**. All seven tools have JSON-RPC examples and
 Try it out on the existing `/mcp` endpoint; no REST endpoints per tool are added.
 Swagger assets are served locally without a CDN.
 
@@ -161,7 +165,7 @@ npx @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8787/mcp --met
 `query_features_ogc` keeps its existing name and box-query default. For true point-feature
 radius queries select `spatialMode: "circle"` with EPSG:2056 and an explicit radius of
 0–1000 meters. Distances and sorting are computed on the server; coverage metadata
-identifies partial or unknown candidate sets. There are still five tools and the same
+identifies partial or unknown candidate sets. There are now seven tools and the same
 `/mcp` endpoint. Refresh client tool metadata after upgrading. See the
 [radius and answer contract](docs/workflow.md#radius-and-answer-contract).
 
@@ -178,7 +182,7 @@ The validated V1 scenarios are:
 - load STAC metadata and assets for `STNA` (Strassennamen)
 - query WFS3 near Dufourstrasse 40 in EPSG:2056
 - with a key: resolve the address, dynamically find its parcel/E-GRID and retrieve Grundstückinfo
-- list and call the five tools through the Streamable HTTP MCP endpoint
+- list and call the seven tools through the Streamable HTTP MCP endpoint
 - search OGC metadata directly, including multiple layers per product, without a full upstream catalog request
 
 ## Deploy to Cloudflare Workers
@@ -246,7 +250,7 @@ After deployment:
 1. Confirm the public HTTPS `/mcp` URL with MCP Inspector.
 2. In ChatGPT settings, open **Security and login** and enable **Developer mode**. Availability can depend on account and workspace policy.
 3. Open ChatGPT Plugins, add a connection, and enter the complete `https://…workers.dev/mcp` URL.
-4. Review the five discovered tools and start a new conversation with the connection enabled.
+4. Review the seven discovered tools and start a new conversation with the connection enabled.
 5. Try: `Gib mir alle verfügbaren Informationen zur Dufourstrasse 40.`
 
 For a private or workspace-only test, developer mode is the intended route; public plugin submission is not required. If a future deployment exposes user-specific data or write actions, implement MCP-conformant OAuth 2.1 then—not in this read-only V1.

@@ -52,6 +52,12 @@ function mockGeoBs() {
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.hostname === "127.0.0.1") return original(input, init);
+    if (url.origin === "https://api.oereb.bs.ch") {
+      expect(url.searchParams.get("extended")).toBe("true");
+      expect(new Headers(init?.headers).has("apikey")).toBe(false);
+      calls.push(url.pathname);
+      return Response.json({ GetExtractByIdResponse: { extract: { RealEstate: { EGRID: "CH516702897010" } } } });
+    }
     expect(url.origin).toBe("https://api.geo.bs.ch");
     calls.push(url.pathname);
     if (url.pathname === "/search/v2/search") return Response.json([{ label: "Dufourstrasse 40 (synthetic)", layer_name: "Adresse", geom: "POINT (2611300 1266600)" }]);
@@ -81,7 +87,7 @@ describe("public Node documentation and gateway routing", () => {
     expect(catalog.get).not.toHaveBeenCalled();
     const metadata = getToolDocumentation(createGeoBsServer({}, catalog));
     const { frame } = await rpc(`${base}${prefix}`, { jsonrpc: "2.0", id: 1, method: "tools/list" });
-    expect(frame.result.tools).toHaveLength(5);
+    expect(frame.result.tools).toHaveLength(7);
     for (const tool of frame.result.tools) {
       const source = metadata.find(entry => entry.name === tool.name)!;
       expect(tool.inputSchema).toEqual(z.toJSONSchema(source.inputSchema, { io: "input" }));
@@ -98,7 +104,7 @@ describe("public Node documentation and gateway routing", () => {
     const spec: any = await (await fetch(`${base}/openapi.json`)).json();
     expect(JSON.stringify(spec)).not.toContain("synthetic-test-key");
     const examples = spec.paths["/mcp"].post.requestBody.content["application/json"].examples;
-    expect(Object.keys(examples)).toHaveLength(7);
+    expect(Object.keys(examples)).toHaveLength(9);
     for (const [name, example] of Object.entries(examples) as [string, { value: unknown }][]) {
       const { response, frame } = await rpc(`${base}/geobs-mcp/v1`, example.value);
       expect(response.status, name).toBe(200);
@@ -120,7 +126,7 @@ describe("public Node documentation and gateway routing", () => {
       const response = await fetch(input, init); types.push(response.headers.get("content-type") ?? ""); return response;
     } }));
     try {
-      expect((await client.listTools()).tools).toHaveLength(5);
+      expect((await client.listTools()).tools).toHaveLength(7);
       expect((await client.callTool({ name: "search_datasets_ogc", arguments: { query: "Strassennamen" } })).isError).not.toBe(true);
       expect(types.some(type => type.includes("application/json"))).toBe(true);
     } finally { await client.close(); }

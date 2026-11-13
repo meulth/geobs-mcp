@@ -230,7 +230,7 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       });
       const listed = await client.listTools();
       expectPortableArrays(listed);
-      expect(listed.tools).toHaveLength(5);
+      expect(listed.tools).toHaveLength(7);
     } finally {
       await client.close();
       await server.close();
@@ -349,12 +349,12 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
     } finally { await client.close(); await server.close(); }
   });
 
-  it("discovers exactly five tool schemas and their read-only annotations", async () => {
+  it("discovers exactly seven tool schemas and their read-only annotations", async () => {
     const { client, server } = await connectClient();
     try {
       const { tools } = await client.listTools();
       expect(tools.map((tool) => tool.name)).toEqual([
-        "search_api_v2", "get_dataset_stac", "query_features_ogc", "get_property_info", "search_datasets_ogc"
+        "search_api_v2", "get_dataset_stac", "query_features_ogc", "get_property_info", "search_datasets_ogc", "get_oereb_extract", "get_oereb_pdf_link"
       ]);
       for (const tool of tools) {
         expectPortableArrays(tool.inputSchema);

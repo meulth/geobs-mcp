@@ -1,6 +1,6 @@
 # Node.js runtime and portable release
 
-The Node adapter retains the same five tool registrations, schemas and
+The Node adapter retains the same seven tool registrations, schemas and
 read-only `/mcp` contract, with optional personal authentication at a trusted
 Cloudflare Access gateway. The existing Worker entry point, KV binding
 and deployment command remain available. No migration occurs when building.

@@ -1,4 +1,5 @@
 export const GEOBS_ORIGIN = "https://api.geo.bs.ch";
+export const OEREB_ORIGIN = "https://api.oereb.bs.ch";
 
 export const API_URLS = {
   stac: `${GEOBS_ORIGIN}/stac/v1/`,

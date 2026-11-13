@@ -9,7 +9,7 @@ tool schema catalog or REST adapter is maintained.
 
 The design follows the [DCC-BS MCP documentation](https://mcp.data.bs.ch/docs)
 and its [JSON-RPC OpenAPI implementation](https://github.com/DCC-BS/mcp-data-bs/blob/main/api_docs.py):
-one `POST /mcp` operation with a request `oneOf` and named examples for all five
+one `POST /mcp` operation with a request `oneOf` and named examples for all seven
 tools. This is functional alignment, not a dependency on the DCC service.
 The existing Cloudflare entry point is retained; these documentation routes
 are provided by the standalone Node.js runtime.
@@ -17,7 +17,7 @@ are provided by the standalone Node.js runtime.
 ## Explore and try tools
 
 1. Open `/docs`, expand `POST /mcp`, and click **Try it out**.
-2. Select a named example (one of the five tools, `tools/list` or `initialize`).
+2. Select a named example (one of the seven tools, `tools/list` or `initialize`).
 3. Review/edit its JSON-RPC body and click **Execute**.
 4. Read the JSON-RPC result. A controlled tool failure can have HTTP 200 and
    `result.isError: true`; HTTP success alone does not prove a successful query.
@@ -141,7 +141,7 @@ negotiates MCP rather than treating a tool as an independent REST operation.
   URL using the client's connection settings. Availability and administrative
   permissions depend on the client. Refresh its tool metadata after upgrades.
 - In applications such as Bebbi Bot, configure the same URL as the remote MCP
-  server. Do not import the OpenAPI description as five REST tools. Let the MCP
+  server. Do not import the OpenAPI description as seven REST tools. Let the MCP
   client handle initialize, protocol headers, tools/list and JSON/SSE responses.
 - To verify the connection independently, use the MCP Inspector:
 
@@ -166,13 +166,13 @@ npm run test:helm
 
 Unit/HTTP tests validate the generated OpenAPI 3.1 document without external
 references, compare its source schemas to live tools/list and execute **all
-five published tool examples** plus initialize/list through the real JSON-RPC
+seven published tool examples** plus initialize/list through the real JSON-RPC
 handler with synthetic GeoBS responses. They also cover missing keys, malformed
 JSON, unacceptable Accept, Host/Origin protection and modern JSON negotiation.
 
 `test:docs` requires installed Playwright Chromium, builds on the compiled
 artifact and opens the real Swagger UI in three modes: no prefix, preserved
-prefix and a loopback proxy stripping the prefix. It verifies five selectable
+prefix and a loopback proxy stripping the prefix. It verifies seven selectable
 tools, clicks Execute for a cached search, checks actual headers and the visible
 raw SSE result, and rejects external browser requests. It uses temporary
 synthetic data and no upstream calls/secrets. The opt-in browser test does not

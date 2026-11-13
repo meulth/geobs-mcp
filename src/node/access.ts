@@ -122,7 +122,7 @@ export function createAccessGuard(config: AccessConfiguration) {
           return { ok: false, reason: "claims", claim: "typ", claim_issue: "invalid" };
         }
         // Org and non-identity/service tokens do not grant personal MCP access.
-        // The dedicated app AUD is the permission boundary for all five
+        // The dedicated app AUD is the permission boundary for all seven
         // read-only tools. Access enforces OAuth scopes/policies at its edge;
         // it does not promise an OAuth scope claim in the origin assertion.
         if (payload.type !== "app") return { ok: false, reason: "token_type" };
