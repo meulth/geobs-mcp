@@ -61,7 +61,7 @@ and proceeds directly to its JSON extract.
 Extract requests always include **`extended=true`**. A successful response has
 `status: extract_available`, the exact E-GRID, source URL and retrieval time,
 resolution details, the complete JSON supplied by the service in `response`,
-and an official PDF URL that has not been fetched. Unknown extension fields,
+and an explicit `coverage` notice. It does not add a PDF download URL. Unknown extension fields,
 legal provisions, status, disclaimers and dates are preserved.
 
 `CreationDate` is the extract creation date. `UpdateDateCS` concerns cadastral
@@ -69,10 +69,32 @@ surveying; neither is the update date of every restriction. Preserve original
 dates and do not invent a timezone or infer legal effect from JSON/PDF format.
 An extract is not a complete legal dossier or permission to build.
 
-The JSON does **not necessarily include the extended PDF's Annex A**. In a
-checked example, enabling the extended PDF added Annex A while the JSON's
-substantive content remained unchanged. Refer to the official extended PDF when
-these additional details are needed; do not invent a machine-readable annex.
+Always start with JSON for ordinary questions. When discussing restrictions,
+list all returned restrictions, legal provisions, legal bases and hints with
+their full supplied titles/identifiers and every full URL. Do not present a
+selection of examples as the full list or hide URLs behind abbreviated labels.
+Only narrow the subject when the user explicitly asks about that particular
+right/topic; state that scope and retain applicable disclaimers and coverage
+warnings. Do not claim that linked legal texts have been read merely because
+the extract contains their URLs.
+
+The JSON **can already contain cantonal themes**, such as `ch.BS.Denkmalverzeichnis`.
+It does **not establish complete coverage of Annex A: Zusatzinformationen für
+Baubegehren**. In a checked example, enabling the extended PDF added Annex A
+while the JSON's substantive content remained unchanged. This is an observed
+format difference, not proof that every cantonal item is always absent from
+JSON or that further restrictions apply to a particular property.
+
+The result explicitly separates `coverage.returnedJson: complete_upstream_response`
+from `coverage.cantonalSupplement: not_verified_complete` and provides a German
+notice: additional cantonal requirements/restrictions may exist and have not
+been fully checked here. Additional planning information is not automatically
+a legally binding restriction. Always disclose this limitation; do not invent
+a machine-readable annex or claim unrestricted building rights. The
+[official planning guidance](https://www.bs.ch/bvd/bgi/bauen/planungsgrundlagen)
+describes the additional planning information. A PDF remains opt-in even when
+the JSON has this coverage limitation; do not fetch or publish its download
+link without an explicit PDF request.
 
 ## Official PDF link: `get_oereb_pdf_link`
 
@@ -87,6 +109,13 @@ The result provides `status: link_available` and an official URL of the form:
 ```text
 https://api.oereb.bs.ch/extract/pdf/?EGRID=CH516702897010&extended=true
 ```
+
+Copy this URL exactly: only `EGRID` and `extended=true` are generated. Never add
+`utm_source` or other tracking parameters. Show the requested PDF URL in a fenced
+text code block for copying. The tool's text summary uses that format as well.
+A client may rewrite clickable links independently of the MCP server; server
+instructions cannot guarantee how a client renders them. The exact URL remains
+available in `pdfUrl` and in the copyable text.
 
 Opening the link asks the official service to generate the extended document.
 Generation may take tens of seconds and the document can be several megabytes.

@@ -35,9 +35,13 @@ describe("OEREB inputs, sources and selection", () => {
   it("preserves the entire extract and unknown fields with only extended=true", async () => {
     const { client, fetcher } = setup();
     const output = await getOerebExtract(client, { egrid: ` ${EGRID.toLowerCase()} ` });
+    if (output.status !== "extract_available") throw new Error("Expected an extract");
     expect(output).toMatchObject({ status: "extract_available", egrid: EGRID, response: extract(), candidates: [] });
     expect(output.source.url).toBe(`https://api.oereb.bs.ch/extract/json/?EGRID=${EGRID}&extended=true`);
-    expect(output).toHaveProperty("pdfUrl", `https://api.oereb.bs.ch/extract/pdf/?EGRID=${EGRID}&extended=true`);
+    expect(output).not.toHaveProperty("pdfUrl");
+    expect(JSON.stringify(output)).not.toContain("/extract/pdf/");
+    expect(output.coverage).toMatchObject({ returnedJson: "complete_upstream_response", cantonalSupplement: "not_verified_complete" });
+    expect(output.coverage!.notice).toContain("weitere kantonale Vorgaben oder Einschränkungen");
     const [url, options] = fetcher.mock.calls[0]! as unknown as [URL, RequestInit];
     expect(url.href).toBe(output.source.url);
     expect(options.redirect).toBe("manual");
@@ -55,6 +59,33 @@ describe("OEREB inputs, sources and selection", () => {
     expect(new URL(String(fetcher.mock.calls[0]![0])).searchParams.get("EN")).toBe("2613004,1269174.9");
     expect(new URL(String(fetcher.mock.calls[1]![0])).searchParams.get("EGRID")).toBe(OTHER);
     expect(result).toMatchObject({ egrid: OTHER, resolvedFrom: { type: "point", point }, candidates: [candidate(OTHER)] });
+  });
+
+  it("preserves every legal reference and cantonal theme without claiming complete Annex A coverage", async () => {
+    const base = extract();
+    const response = { ...base, GetExtractByIdResponse: { extract: { ...base.GetExtractByIdResponse.extract,
+      ConcernedTheme: [{ Code: "ch.BS.Denkmalverzeichnis" }, { Code: "second-theme" }],
+      RealEstate: { ...base.GetExtractByIdResponse.extract.RealEstate,
+        RestrictionOnLandownership: [
+          { Theme: { Code: "ch.BS.Denkmalverzeichnis" }, LegalProvisions: [
+            { Title: "First full legal title", TextAtWeb: "https://example.test/law?article=1&lang=de" },
+            { Title: "Second full legal title", TextAtWeb: "https://example.test/second-law" }
+          ], Law: [{ Title: "Full legal basis", TextAtWeb: "https://example.test/basis" }],
+          Hint: [{ Title: "Full additional hint", TextAtWeb: "https://example.test/hint" }] },
+          { Theme: { Code: "second-theme" }, LegalProvisions: [
+            { Title: "Third full legal title", TextAtWeb: "https://example.test/third-law" }
+          ] }
+        ] }
+    } } };
+    const fetcher = vi.fn(async () => Response.json(response));
+    const result = await getOerebExtract(new OerebClient(fetcher), { egrid: EGRID });
+    if (result.status !== "extract_available") throw new Error("Expected an extract");
+    expect(result.response).toEqual(response);
+    expect(result.coverage!.cantonalSupplement).toBe("not_verified_complete");
+    expect(result.guidance).toContain("list ALL returned restrictions");
+    expect(result.guidance).toContain("Only narrow the substantive topic when the user explicitly requests");
+    expect(result.guidance).toContain("do not say it contains federal data only");
+    expect(fetcher).toHaveBeenCalledOnce();
   });
 
   it.each([false, true])("returns all distinct choices without fetching extracts (reverse=%s)", async reverse => {
@@ -203,6 +234,15 @@ describe("OEREB through the actual MCP SDK", () => {
       expect(JSON.stringify(fetcher.mock.calls)).not.toContain("private-geobs-key");
       const pdf = await client.callTool({ name: "get_oereb_pdf_link", arguments: { egrid: EGRID } });
       expect(pdf.isError).not.toBe(true);
+      expect(JSON.stringify(result.structuredContent)).not.toContain("/extract/pdf/");
+      expect(pdf.content[0]).toMatchObject({ type: "text", text: expect.stringContaining(
+        `\`\`\`text\nhttps://api.oereb.bs.ch/extract/pdf/?EGRID=${EGRID}&extended=true\n\`\`\``
+      ) });
+      expect(JSON.stringify(pdf)).not.toContain("utm_source=");
+      const reported = await client.callTool({ name: "get_oereb_pdf_link", arguments: { egrid: "CH567989676722" } });
+      expect(reported.structuredContent).toMatchObject({
+        pdfUrl: "https://api.oereb.bs.ch/extract/pdf/?EGRID=CH567989676722&extended=true"
+      });
       expect(fetcher).toHaveBeenCalledOnce();
       const invalid = await client.callTool({ name: "get_oereb_extract", arguments: { egrid: EGRID, point } });
       expect(invalid.isError).toBe(true);

@@ -5,6 +5,7 @@ import { GeoBsError } from "../errors";
 import { fitsToolOutput } from "../mcp/results";
 import { registerReadOnlyTool } from "../mcp/register";
 import { oerebChoices, type PropertyChoiceReader } from "./oerebChoices";
+import { CANTONAL_SUPPLEMENT_NOTICE, OEREB_ANSWER_RULES } from "./oerebGuidance";
 
 const inputShape = {
   egrid: egridSchema.optional(),
@@ -23,12 +24,16 @@ const outputShape = {
   egrid: z.string().optional(),
   response: z.record(z.string(), z.json()).optional(),
   source: z.object({ url: z.string(), retrievedAt: z.string() }),
-  pdfUrl: z.string().optional(),
+  coverage: z.object({
+    returnedJson: z.literal("complete_upstream_response"),
+    cantonalSupplement: z.literal("not_verified_complete"),
+    notice: z.string()
+  }).optional(),
   guidance: z.string()
 };
 
-function summarize(output: { status: string; source: { url: string } }): string {
-  return `${output.status === "selection_required" ? "Select a property before requesting an OEREB extract." : "Returned the complete JSON supplied by the OEREB service, not the PDF appendix."} Source: ${output.source.url}`;
+function summarize(output: { status: string; source: { url: string }; coverage?: { notice: string } }): string {
+  return `${output.status === "selection_required" ? "Select a property before requesting an OEREB extract." : "Returned the complete JSON supplied by the OEREB service."} Source: ${output.source.url}${output.coverage ? ` ${output.coverage.notice}` : ""}`;
 }
 
 export async function getOerebExtract(client: OerebClient, input: unknown, choiceReader?: PropertyChoiceReader) {
@@ -66,8 +71,9 @@ export async function getOerebExtract(client: OerebClient, input: unknown, choic
     const output = {
       status: "extract_available" as const, resolvedFrom, candidates, egrid: egrid!, response,
       source: { url, retrievedAt: new Date().toISOString() },
-      pdfUrl: oerebExtractUrl(egrid!, "pdf").href,
-      guidance: "Cite the exact E-GRID, source and returned legal notices/status. A point-based lookup is a candidate lookup, not verified exact containment; the OEREB specification permits a one-metre capture radius. CreationDate is extract creation, UpdateDateCS concerns cadastral surveying, neither is the update date of all restrictions. Preserve dates without guessing a timezone. The JSON does not necessarily contain the PDF's Annex A. This is not a complete legal dossier or permission to build. The PDF link has not been downloaded or verified; use get_oereb_pdf_link only on explicit PDF request."
+      coverage: { returnedJson: "complete_upstream_response" as const,
+        cantonalSupplement: "not_verified_complete" as const, notice: CANTONAL_SUPPLEMENT_NOTICE },
+      guidance: OEREB_ANSWER_RULES + " Cite the exact E-GRID, source and returned legal notices/status. A point-based lookup is a candidate lookup, not verified exact containment; the OEREB specification permits a one-metre capture radius. CreationDate is extract creation, UpdateDateCS concerns cadastral surveying, neither is the update date of all restrictions. Preserve dates without guessing a timezone. This is not a complete legal dossier or permission to build."
     };
     if (!fitsToolOutput(output, summarize(output))) {
       throw new GeoBsError("RESPONSE_TOO_LARGE", "The complete OEREB extract exceeds the MCP output limit.");
@@ -85,7 +91,7 @@ export function registerGetOerebExtract(server: McpServer, client: OerebClient, 
   registerReadOnlyTool(server, {
     name: "get_oereb_extract",
     title: "Get a Basel-Stadt OEREB JSON extract",
-    description: "Get public-law restrictions for one E-GRID, or resolve an exact EPSG:2056 point through the key-free OEREB API first. Resolve addresses with search_api_v2 (epsg=2056); clarify ambiguous places. Provide exactly one of egrid or point. Multiple properties require user selection, never silently choose the first. Always requests extended=true. Returns the full supplied JSON with notices and dates; JSON does not necessarily include PDF Annex A. For an explicitly requested official PDF use get_oereb_pdf_link.",
+    description: "Get public-law restrictions for one E-GRID, or resolve an exact EPSG:2056 point through the key-free OEREB API first. Resolve addresses with search_api_v2 (epsg=2056); clarify ambiguous places. Provide exactly one of egrid or point. Multiple properties require user selection, never silently choose the first. Always requests extended=true. Returns the full supplied JSON with notices and dates, without an unsolicited PDF link. " + OEREB_ANSWER_RULES,
     inputSchema: inputShape, outputSchema: outputShape,
     example: { egrid: "CH516702897010" },
     execute: input => getOerebExtract(client, input, choiceReader), summarize
