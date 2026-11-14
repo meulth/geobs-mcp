@@ -100,6 +100,34 @@ describe("Access configuration fails closed", () => {
 });
 
 describe("signed personal Access assertion", () => {
+  it("accepts refreshed short assertions with the original session timestamps throughout a twenty-hour grant", async () => {
+    keys();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const started = Math.floor(Date.now() / 1000);
+    const guard = createAccessGuard(config);
+    for (const age of [0, 901, 6 * 3600, 20 * 3600 - 300]) {
+      vi.setSystemTime((started + age) * 1000);
+      const refreshed = await token({ iat: started, nbf: started, exp: started + age + 300 });
+      expect(await guard.verify(refreshed)).toEqual({ ok: true });
+    }
+    const last = await token({ iat: started, nbf: started, exp: started + 20 * 3600 });
+    vi.setSystemTime((started + 20 * 3600 + 6) * 1000);
+    expect(await guard.verify(last)).toMatchObject({ ok: false, reason: "expired" });
+  });
+  it("bounds remaining validity for both initial and refreshed assertions, with five seconds of clock tolerance", async () => {
+    keys();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const now = Math.floor(Date.now() / 1000);
+    vi.setSystemTime(now * 1000);
+    for (const age of [0, 6 * 3600]) {
+      const guard = createAccessGuard(config);
+      expect(await guard.verify(await token({ iat: now - age, nbf: now - age, exp: now + 905 }))).toEqual({ ok: true });
+      expect(await guard.verify(await token({ iat: now - age, nbf: now - age, exp: now + 906 })))
+        .toEqual({ ok: false, reason: "lifetime" });
+      expect(await guard.verify(await token({ iat: now - age, nbf: now - age, exp: now + 20 * 3600 })))
+        .toEqual({ ok: false, reason: "lifetime" });
+    }
+  });
   it("validates a dedicated application token and caches only public verification keys", async () => {
     keys();
     const guard = createAccessGuard(config);

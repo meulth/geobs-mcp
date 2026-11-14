@@ -113,10 +113,12 @@ export function createAccessGuard(config: AccessConfiguration) {
       try {
         // RFC 7519 makes the JOSE typ header optional. Access assertions must
         // still pass signature, dedicated app audience, identity and time checks.
+        const currentDate = new Date();
+        const now = Math.floor(currentDate.getTime() / 1000);
         const { payload, protectedHeader } = await jwtVerify(assertion, keys, {
           issuer: config.issuer, audience: config.audience, algorithms: ["RS256"],
           requiredClaims: ["exp", "iat", "nbf", "sub", "email", "type"],
-          maxTokenAge: config.maxTokenLifetimeSeconds, clockTolerance: 5
+          currentDate, clockTolerance: 5
         });
         if (protectedHeader.typ !== undefined && !/^(application\/)?jwt$/i.test(protectedHeader.typ)) {
           return { ok: false, reason: "claims", claim: "typ", claim_issue: "invalid" };
@@ -128,8 +130,15 @@ export function createAccessGuard(config: AccessConfiguration) {
         if (payload.type !== "app") return { ok: false, reason: "token_type" };
         if (typeof payload.sub !== "string" || payload.sub.length === 0 ||
             typeof payload.email !== "string" || !/^[^\s@]+@[^\s@]+$/.test(payload.email)) return { ok: false, reason: "identity" };
-        if (typeof payload.iat !== "number" || typeof payload.exp !== "number" || payload.exp <= payload.iat ||
-            payload.exp - payload.iat > config.maxTokenLifetimeSeconds) return { ok: false, reason: "lifetime" };
+        if (typeof payload.iat !== "number" || typeof payload.exp !== "number" || payload.exp <= payload.iat) {
+          return { ok: false, reason: "lifetime" };
+        }
+        if (payload.iat > now + 5) return { ok: false, reason: "not_yet_valid", claim: "iat", claim_issue: "check_failed" };
+        // Managed OAuth refreshes exp while retaining the original iat/nbf.
+        // Neither token age nor exp-iat measures the refreshed assertion's
+        // remaining validity. Bound that window instead; Access enforces the
+        // refresh grant duration and re-evaluates permission at its edge.
+        if (payload.exp - now > config.maxTokenLifetimeSeconds + 5) return { ok: false, reason: "lifetime" };
         return { ok: true };
       } catch (error) {
         // No JWT, identity, claim value, key URL or library message leaves

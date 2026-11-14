@@ -45,10 +45,11 @@ For the dedicated self-hosted Access application, enable Managed OAuth,
 restrict dynamic registration to the clients' actual callback URIs, and disable
 unneeded localhost/loopback registrations. Configure a short OAuth access-token
 lifetime (for example five minutes) and an application/policy session duration
-of at most fifteen minutes. These are two separate settings: the session
-duration, not the OAuth access-token lifetime, determines the lifetime of the
-assertion that Node verifies. The OAuth grant session is a third, independent
-duration: it controls how long the client can refresh without another login.
+of at most fifteen minutes for browser sessions. The OAuth grant session is
+independent: it controls how long the client can refresh without another login.
+Managed OAuth forwards a signed assertion whose expiry is renewed while its
+original `iat` and `nbf` can remain unchanged. Consequently, neither `exp - iat`
+nor the age of `iat` measures the refreshed assertion's remaining validity.
 Re-read the resulting configuration rather than assuming defaults.
 
 ### Stay signed in for twenty hours
@@ -72,8 +73,9 @@ This is the relevant part of the application configuration, not a complete
 replacement request. Read the existing application first, preserve its other
 settings, redirect URI restrictions and reusable policy references, then update
 only `oauth_configuration.grant.session_duration`. Keep the application/policy
-session at fifteen minutes and Node's maximum at `900` seconds. A twenty-hour
-refresh grant does not require a twenty-hour JWT or a relaxed origin check.
+session at fifteen minutes and Node's maximum remaining assertion validity at
+`900` seconds. A twenty-hour refresh grant does not require accepting an
+assertion with twenty hours left before expiry.
 
 A client that supports refresh tokens renews its five-minute access tokens
 automatically within the twenty-hour grant. Access re-evaluates policies on each
@@ -157,7 +159,7 @@ the personal identity, signature, issuer, application AUD or lifetime optional.
 | `reason` | Meaning and usual correction |
 | --- | --- |
 | `missing` | No `Cf-Access-Jwt-Assertion`. The route is not covered by the Access application, or the origin was reached directly. |
-| `lifetime` | The assertion's signed lifetime or age exceeds `GEOBS_ACCESS_MAX_TOKEN_LIFETIME_SECONDS`. The assertion lifetime is the Access application (or policy) session duration, which defaults to 24 hours; it is not the Managed OAuth access-token lifetime. Set the session duration to at most fifteen minutes. |
+| `lifetime` | The assertion has inconsistent issue/expiry timestamps or more remaining validity than `GEOBS_ACCESS_MAX_TOKEN_LIFETIME_SECONDS` (plus five seconds of clock tolerance). Check the Managed OAuth access-token lifetime. A refreshed assertion can legitimately retain an old `iat`; that age is not a reason to reject it. |
 | `audience` | `GEOBS_ACCESS_AUDIENCE` is not the AUD tag of the application in front of this route. Recreating an application changes its AUD tag. |
 | `issuer`, `unknown_key`, `signature` | `GEOBS_ACCESS_ISSUER` names a different team than the one that signed the assertion, or the assertion is forged. |
 | `keys_unavailable` | Node cannot fetch `<issuer>/cdn-cgi/access/certs` within three seconds. Check outbound HTTPS and DNS from the Node host or cluster. |
@@ -189,10 +191,13 @@ identity headers, wrong Hosts/Origins and every alternate origin path.
 Node caches public JWKS for five minutes, with a three-second fetch timeout
 and a thirty-second rotation fetch cooldown. It does not cache authorization
 success. Each request rechecks token time claims with five seconds of clock
-tolerance. Tokens whose signed lifetime exceeds the configured maximum are
-rejected. An already-issued signed assertion can remain valid at a direct
+tolerance. `GEOBS_ACCESS_MAX_TOKEN_LIFETIME_SECONDS` bounds the remaining
+validity (`exp - now`), not the original issue time or `exp - iat`. Future issue
+times, future not-before times and expired assertions are rejected. The origin
+does not independently extend or refresh a grant; Access enforces its duration.
+An already-issued signed assertion can remain valid at a direct
 origin until expiry: local cryptographic verification is not online revocation.
-The maximum configured lifetime is fifteen minutes, plus clock tolerance;
+The maximum accepted remaining validity is fifteen minutes, plus clock tolerance;
 an already-running exchange may still finish. Access's public-edge revocation
 may be faster; measure actual behavior before promising a shorter delay.
 Removing only a browser cookie is not a complete token-revocation test.
