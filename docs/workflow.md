@@ -53,6 +53,21 @@ The server provides deterministic distance/coverage fields and host instructions
 host still selects tools, retains conversation context and writes the final answer;
 successful unit/MCP tests do not prove every generated chat answer follows these rules.
 
+Every data-derived final answer should retain a short sources and data-status note in
+the user's language: exact dataset/layer ID or E-GRID, source URL, unknown verified
+update date where applicable, and relevant limits or partial failures. A short answer
+still needs these facts. A clarification without a data claim does not need a source.
+
+`get_dataset_stac` exposes collection `source` (including retrieval time), `itemsSource`
+and `itemsCoverage`. It requests a single page of at most ten items; it never follows a
+next link automatically. An item list is complete only with a consistent known total,
+all those items returned and no next page or local clipping. Missing/invalid totals,
+next pages and partial failures are explicit, including in the short text result.
+Item `datetime`, catalog fetch time and retrieval time do not establish an update date
+for the whole dataset. Completeness here concerns the returned STAC item list, not a
+guarantee of all real-world data or the cached OGC discovery. Existing download assets
+and item fields remain available.
+
 ## Likely additions for complex questions
 
 Questions such as “Wo ist es nachts ruhig?” or “Wo gibt es viel Grün und wenig Verkehr?” need explicit geospatial operations, not a vector database or embedded LLM. Candidate V2 tools are:

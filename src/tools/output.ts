@@ -1,9 +1,9 @@
 import { GeoBsError } from "../errors";
 import { fitsToolOutput } from "../mcp/results";
 
-export function sourceSummary(source: unknown): string {
+export function sourceSummary(source: unknown, subject: "Feature" | "Dataset" = "Feature"): string {
   if (!source || typeof source !== "object" || !("url" in source) || typeof source.url !== "string") return "";
-  return ` Cite this source in the answer: ${source.url}. Feature update date: unknown (retrieval/cache dates are not update dates).`;
+  return ` Cite this source in the answer: ${source.url}. ${subject} update date: unknown (retrieval/cache dates are not update dates).`;
 }
 
 export function compactText(value: string | undefined, max = 600): string | undefined {

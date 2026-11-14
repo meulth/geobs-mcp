@@ -52,6 +52,26 @@ interface ItemCollection {
   numberReturned?: number;
 }
 
+export const STAC_ITEM_LIMIT = 10;
+
+export interface StacItemsPage {
+  items: StacItem[];
+  source: { url: string; retrievedAt: string };
+  coverage: {
+    complete: boolean;
+    reasons: string[];
+    requestedLimit: number;
+    numberReturned: number;
+    numberMatched: number | null;
+    upstreamNumberReturned: number | null;
+    hasNextPage: boolean;
+  };
+}
+
+function count(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
 function validateId(id: string): string {
   const parsed = datasetIdSchema.safeParse(id);
   if (!parsed.success) {
@@ -80,8 +100,13 @@ export class StacClient {
   }
 
   async listItems(id: string, limit = 10): Promise<StacItem[]> {
+    return (await this.listItemsPage(id, limit)).items;
+  }
+
+  async listItemsPage(id: string, limit = STAC_ITEM_LIMIT): Promise<StacItemsPage> {
     id = validateId(id);
-    const safeLimit = Math.max(1, Math.min(10, Math.trunc(limit)));
+    const safeLimit = Number.isFinite(limit)
+      ? Math.max(1, Math.min(STAC_ITEM_LIMIT, Math.trunc(limit))) : STAC_ITEM_LIMIT;
     const url = new URL(
       `collections/${encodeURIComponent(id)}/items`,
       API_URLS.stac
@@ -97,6 +122,28 @@ export class StacClient {
         "The STAC items response is invalid."
       );
     }
-    return response.data.features;
+    const received = response.data.features;
+    const items = received.slice(0, safeLimit);
+    const numberMatched = count(response.data.numberMatched);
+    const upstreamNumberReturned = count(response.data.numberReturned);
+    const hasNextPage = Array.isArray(response.data.links) &&
+      response.data.links.some(link => link?.rel === "next");
+    const reasons: string[] = [];
+    if (hasNextPage) reasons.push("next_page");
+    if (numberMatched === null) reasons.push("unknown_total");
+    else if (numberMatched > items.length) reasons.push("upstream_limit");
+    if (received.length > items.length) reasons.push("local_limit");
+    if ((response.data.numberMatched != null && numberMatched === null) ||
+        (response.data.numberReturned != null && upstreamNumberReturned === null) ||
+        (numberMatched !== null && numberMatched < received.length) ||
+        (upstreamNumberReturned !== null && upstreamNumberReturned !== received.length)) {
+      reasons.push("inconsistent_counts");
+    }
+    return {
+      items,
+      source: { url: url.href, retrievedAt: new Date().toISOString() },
+      coverage: { complete: reasons.length === 0, reasons, requestedLimit: safeLimit,
+        numberReturned: items.length, numberMatched, upstreamNumberReturned, hasNextPage }
+    };
   }
 }

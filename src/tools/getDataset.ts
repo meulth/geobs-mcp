@@ -2,12 +2,12 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { registerReadOnlyTool } from "../mcp/register";
 import { datasetIdSchema } from "../schemas";
-import type { StacClient, StacAsset, StacItem } from "../clients/stac";
+import { STAC_ITEM_LIMIT, type StacClient, type StacAsset, type StacItem } from "../clients/stac";
 import type { OgcFeaturesClient } from "../clients/ogcFeatures";
 import { findCollectionsForDataset } from "../discovery";
 import { asGeoBsError } from "../errors";
-import { compactText, selectLinks } from "./output";
-import { GEOBS_ORIGIN } from "../config";
+import { compactText, selectLinks, sourceSummary } from "./output";
+import { API_URLS, GEOBS_ORIGIN } from "../config";
 
 const getDatasetShape = {
   id: datasetIdSchema.describe("Known STAC product ID, or stacDatasetId from search_datasets_ogc (inferred from the OGC naming convention). Do not pass the long OGC layer ID.")
@@ -18,6 +18,11 @@ const getDatasetInput = z.object(getDatasetShape);
 const getDatasetOutputShape = {
   id: z.string(),
   title: z.string().optional(),
+  source: z.object({ url: z.string(), retrievedAt: z.string(), dataUpdatedAt: z.null(), note: z.string() }),
+  itemsSource: z.object({ url: z.string(), retrievedAt: z.string().nullable() }),
+  itemsCoverage: z.object({ complete: z.boolean(), reasons: z.array(z.string()),
+    requestedLimit: z.number().int(), numberReturned: z.number().int(), numberMatched: z.number().int().nullable(),
+    upstreamNumberReturned: z.number().int().nullable(), hasNextPage: z.boolean() }),
   items: z.array(z.object({ id: z.string() }).catchall(z.json())),
   ogcFeaturesDiscovery: z.object({
     totalMatches: z.number().int(),
@@ -61,12 +66,18 @@ export async function getDataset(
 ) {
   const parsed = getDatasetInput.parse(input);
   const collection = await stac.getCollection(parsed.id);
+  const source = {
+    url: new URL(`collections/${encodeURIComponent(parsed.id)}`, API_URLS.stac).href,
+    retrievedAt: new Date().toISOString(), dataUpdatedAt: null,
+    note: "Retrieval and OGC catalog dates are not a verified dataset update date. Item datetime describes that item, not a verified update date of the entire dataset."
+  };
   const [itemsResult, wfsResult] = await Promise.allSettled([
-    stac.listItems(parsed.id, 10),
+    stac.listItemsPage(parsed.id, STAC_ITEM_LIMIT),
     ogc.listCollections()
   ]);
 
-  const items = itemsResult.status === "fulfilled" ? itemsResult.value : [];
+  const page = itemsResult.status === "fulfilled" ? itemsResult.value : undefined;
+  const items = page?.items ?? [];
   const related =
     wfsResult.status === "fulfilled"
       ? findCollectionsForDataset(parsed.id, wfsResult.value)
@@ -95,6 +106,16 @@ export async function getDataset(
   return {
     id: collection.id,
     title: collection.title,
+    source,
+    itemsSource: page?.source ?? {
+      url: new URL(`collections/${encodeURIComponent(parsed.id)}/items?limit=${STAC_ITEM_LIMIT}`, API_URLS.stac).href,
+      retrievedAt: null
+    },
+    itemsCoverage: page?.coverage ?? {
+      complete: false, reasons: ["upstream_error"], requestedLimit: STAC_ITEM_LIMIT,
+      numberReturned: 0, numberMatched: null, upstreamNumberReturned: null, hasNextPage: false
+    },
+    guidance: "In the final answer cite the source URL and exact dataset ID, state that the dataset update date is unknown, and distinguish item datetime from dataset updates. Report itemsCoverage and warnings: only one page of at most 10 STAC items is loaded, with no automatic pagination. An incomplete item list is not all available downloads. OGC discovery is scoped to the cached catalog; matchesTruncated limits that list too.",
     description: compactText(collection.description, 2_000),
     stacVersion: collection.stac_version,
     license: collection.license,
@@ -129,7 +150,12 @@ export async function getDataset(
 }
 
 function summarize(output: Awaited<ReturnType<typeof getDataset>>): string {
-  return `Loaded dataset ${output.id}; discovered ${output.ogcFeaturesDiscovery.totalMatches} related OGC collection(s).`;
+  const coverage = output.itemsCoverage;
+  return `Loaded dataset ${output.id}; returned ${coverage.numberReturned} STAC item(s) (request limit ${coverage.requestedLimit}, one page only). ` +
+    `Item list complete: ${coverage.complete}${coverage.reasons.length ? ` (${coverage.reasons.join(", ")})` : ""}. ` +
+    `Discovered ${output.ogcFeaturesDiscovery.totalMatches} related OGC collection(s)${output.ogcFeaturesDiscovery.matchesTruncated ? " (list truncated to 50)" : ""}. ` +
+    (output.warnings.length ? `Partial failures: ${output.warnings.map(warning => `${warning.source}: ${warning.error}`).join("; ")}. ` : "") +
+    `Metadata retrieved at ${output.source.retrievedAt}; item datetime is not a verified dataset update date.` + sourceSummary(output.source, "Dataset");
 }
 
 export function registerGetDataset(server: McpServer, stac: StacClient, ogc: OgcFeaturesClient) {
@@ -137,7 +163,7 @@ export function registerGetDataset(server: McpServer, stac: StacClient, ogc: Ogc
     name: "get_dataset_stac",
     title: "Get a GeoBS dataset",
     description:
-      "Get one STAC dataset, its live metadata, download assets, items and dynamically related OGC API Features collection IDs from the weekly catalog. Includes catalog age. Use a known four-character product ID or stacDatasetId returned by search_datasets_ogc. An inferred ID may return DATASET_NOT_FOUND; products without OGC layers remain accessible by known ID.",
+      "Get one STAC dataset, its live metadata, download assets, at most 10 items from one page and dynamically related OGC API Features collection IDs from the weekly catalog. Cite source and exact dataset ID in the final answer; the dataset update date is unknown, retrieval/catalog dates and item datetime are not verified dataset update dates. Obey itemsCoverage, warnings and discovery matchesTruncated; never label incomplete items as all downloads. Includes catalog age. Use a known four-character product ID or stacDatasetId returned by search_datasets_ogc. An inferred ID may return DATASET_NOT_FOUND; products without OGC layers remain accessible by known ID.",
     inputSchema: getDatasetShape,
     example: { id: "STNA" },
     outputSchema: getDatasetOutputShape,

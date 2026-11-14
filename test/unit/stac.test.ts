@@ -32,4 +32,47 @@ describe("StacClient", () => {
     await expect(new StacClient(fetcher).getCollection("NONE"))
       .rejects.toMatchObject({ code: "DATASET_NOT_FOUND" });
   });
+
+  it.each([
+    [0, 0], [1, 1], [10, 10]
+  ])("recognizes a complete page with %i items and a known total", async (received, total) => {
+    const fetcher = vi.fn(async () => Response.json({
+      features: Array.from({ length: received }, (_, id) => ({ id: String(id) })),
+      numberMatched: total, numberReturned: received, links: []
+    }));
+    const page = await new StacClient(fetcher).listItemsPage("STNA");
+    expect(page.coverage).toMatchObject({ complete: true, reasons: [], numberReturned: received,
+      numberMatched: total, requestedLimit: 10, hasNextPage: false });
+    expect(page.source.url).toBe("https://api.geo.bs.ch/stac/v1/collections/STNA/items?limit=10");
+    expect(Number.isFinite(Date.parse(page.source.retrievedAt))).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [{}, "unknown_total"],
+    [{ numberMatched: 12 }, "upstream_limit"],
+    [{ numberMatched: 2, links: [{ rel: "next", href: "https://evil.example/next" }] }, "next_page"],
+    [{ numberMatched: 1 }, "inconsistent_counts"],
+    [{ numberMatched: 2, numberReturned: 1 }, "inconsistent_counts"],
+    [{ numberMatched: "2" }, "inconsistent_counts"],
+    [{ numberMatched: -1 }, "inconsistent_counts"]
+  ])("does not claim completeness with page metadata %j", async (metadata, reason) => {
+    const fetcher = vi.fn(async () => Response.json({ features: [{ id: "a" }, { id: "b" }], ...metadata }));
+    const page = await new StacClient(fetcher).listItemsPage("STNA");
+    expect(page.coverage.complete).toBe(false);
+    expect(page.coverage.reasons).toContain(reason);
+    expect(fetcher).toHaveBeenCalledTimes(1); // No automatic pagination, including foreign next links.
+  });
+
+  it("bounds an oversized upstream page and retains the existing array API", async () => {
+    const fetcher = vi.fn(async () => Response.json({
+      features: Array.from({ length: 11 }, (_, id) => ({ id: String(id) })), numberMatched: 11
+    }));
+    const client = new StacClient(fetcher);
+    const page = await client.listItemsPage("STNA", 500);
+    expect(page.items).toHaveLength(10);
+    expect(page.coverage).toMatchObject({ complete: false, requestedLimit: 10 });
+    expect(page.coverage.reasons).toContain("local_limit");
+    expect(await client.listItems("STNA", 1)).toHaveLength(1);
+  });
 });

@@ -310,6 +310,14 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
         arguments: { id: searchData.collections[0]!.stacDatasetId }
       });
       expect(structuredContentFromText(dataset)).toEqual(dataset.structuredContent);
+      const datasetText = textBlocks(dataset)[0]!;
+      expect(datasetText).toContain("https://api.geo.bs.ch/stac/v1/collections/STNA");
+      expect(datasetText).toContain("Metadata retrieved at");
+      expect(datasetText).toContain("Dataset update date: unknown");
+      expect(datasetText).toContain("request limit 10, one page only");
+      expect(datasetText).toContain("Item list complete: false (unknown_total)");
+      expect(dataset.structuredContent).toMatchObject({ source: { dataUpdatedAt: null },
+        itemsCoverage: { complete: false, numberReturned: 1 } });
       const collectionId = (
         dataset.structuredContent as {
           ogcFeaturesDiscovery: { collections: Array<{ id: string }> };
@@ -326,6 +334,26 @@ describe("MCP tool results are readable from `content` alone (client-neutral fix
       expect(fetchMock.mock.calls.every(([input]) =>
         !["/stac/v1/collections", "/ogc/v1/wfs3/collections"].includes(new URL(String(input)).pathname)
       )).toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("includes STAC partial failures in text without losing independent collection provenance", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      return url.pathname === "/stac/v1/collections/STNA/items"
+        ? new Response(null, { status: 400 }) : routeFetch(url)!;
+    }));
+    const { client, server } = await connectClient();
+    try {
+      const result = await client.callTool({ name: "get_dataset_stac", arguments: { id: "STNA" } });
+      expect(result.isError).toBeFalsy();
+      expect(structuredContentFromText(result)).toEqual(result.structuredContent);
+      expect(textBlocks(result)[0]).toContain("Item list complete: false (upstream_error)");
+      expect(textBlocks(result)[0]).toContain("Partial failures: stac_items:");
+      expect(textBlocks(result)[0]).toContain("https://api.geo.bs.ch/stac/v1/collections/STNA");
     } finally {
       await client.close();
       await server.close();
